@@ -2,11 +2,13 @@
 name: gui-design
 description: >-
   Use when redesigning, restyling or building any part of the editor GUI
-  (apps/editor-gui: panels, dialogs, tables, forms, trees, Welcome screen,
-  status bar, theme, colors, fonts, icons, spacing, layout) or when the user
-  asks for a better, more modern, clearer or more consistent look, visual
-  hierarchy, UX polish, dark/light theme work or a design system for the
-  Dear ImGui / imgui-bundle frontend and its browser UI (--web).
+  (apps/editor-gui: app shell, workspace, sidebar, tabs, list, inspector,
+  panels, dialogs, tables, forms, trees, guided flows, command palette,
+  Welcome screen, status bar, theme, colors, fonts, icons, spacing, layout),
+  when reviewing or critiquing GUI work or the HTML prototype, or when the
+  user asks for a better, more modern, clearer or more consistent look,
+  visual hierarchy, UX polish, dark/light theme work or a design system for
+  the Dear ImGui / imgui-bundle frontend and its browser UI (--web).
 ---
 
 # GUI Design for the XKNX Editor
@@ -33,7 +35,41 @@ Use the current code only to learn the **technical** building blocks
 (`px()`, `begin_dialog`, `begin_data_table`, `same_line_if_fits`, `filter_box`, …).
 These blocks may be restyled or replaced as well.
 
-## Target design: hybrid by context
+## The reference: spec and prototype
+
+- **Spec:** `docs/superpowers/specs/2026-11-24-gui-redesign-design.md` (shell, workspaces,
+  lists, flows, and why).
+- **Prototype:** open `docs/design/prototype/index.html` (double-click, works from `file://`;
+  `?fast=1` shortens simulations). It is the **visual reference**: when it and this skill
+  disagree, the prototype wins; fix the skill in the same change. Its `tokens.css` mirrors
+  [design-system.md](design-system.md), and `app.css` shows each pattern of
+  [components.md](components.md) in a working layout. German demo texts there; the program's
+  English texts follow AGENTS.md.
+
+## Target design: workspaces and the shell
+
+Settled by the redesign (details and drawings in [components.md](components.md)):
+
+1. **Workspaces per use case.** Planning, Commissioning, Diagnostics & Service, Handover,
+   plus user-saved ones. A workspace decides which views the sidebar lists, what the list
+   column shows and which action is primary. It is a saved layout, not a mode.
+2. **Shell = top bar + view sidebar + list + editor tabs.** The top bar holds the workspace
+   switcher, ⌘K search and the connection status pill. The sidebar collapses to icons.
+   A single click in the list opens a **preview tab** (italic, replaced by the next click);
+   double-click, Enter or the first edit keeps it. "Detail" is the active tab, not a panel.
+3. **Flat structure.** At most **one toggle** above an editor's content
+   ("Parameters | Group Objects"); no tabs inside tabs. Parameter pages are a page list.
+4. **Overview + detail** (provisional rule). List rows hold text, compact symbols and
+   badges, never input fields. Click selects, double-click/Enter opens, a multi-selection
+   is edited in the detail or the inspector. Rename in the detail or with F2.
+5. **No locks.** Editing works in every workspace. Safety comes from rule 4 and from
+   workspaces that do not put editors up front.
+6. **Hide, don't shrink.** Information the workspace does not need is hidden (one step
+   away: tab, ⌘K, sidebar), never squeezed into smaller type or tighter rows.
+7. **Narrow:** ≥ 1 000 full shell; 600–999 icon rail, list as drawer, inspector as sheet;
+   < 600 a drill-down stack (sidebar → list → editor) with a back button.
+
+## Density: hybrid by context
 
 The editor is a professional engineering tool that people use for hours on
 large projects. It is also used by newcomers, on tablets and through the
@@ -88,8 +124,8 @@ it describes. Also add the screenshot command (see *Verification*).
 
 **Phase 2 — Components:** build each pattern from [components.md](components.md)
 as a shared widget under `src/editor_gui/widgets/` before a panel uses it.
-Most of them (badge, button row, filter chip, nav row, banner, empty state) do
-not exist yet. components.md is the target, not an inventory. Each widget gets
+Most of them (app shell, preview tabs, page list, segmented control, stepper,
+queue row, badge, banner, empty state) do not exist yet. components.md is the target, not an inventory. Each widget gets
 a headless imgui test. Draw-list painting is fine **inside `widgets/`**.
 
 **Phase 3 — Panels:** migrate one panel (or one plugin) per change. Do not
@@ -98,7 +134,8 @@ mix a redesign with feature or behaviour changes.
 Before you touch a panel, write this design note into the PR description or
 the plan, in this order:
 
-1. **Surface type:** work, guided or both, and so the density.
+1. **Surface type and workspace:** work, guided or both (so the density), and
+   which workspaces list the view and what they hide.
 2. **User task:** the 1–3 things a user comes to this panel for.
 3. **Hierarchy:** what is primary, secondary and tertiary information, and which
    type style and color role each level gets.
@@ -136,7 +173,10 @@ A design change is not done until you have **seen** it.
   recipe that renders a given panel/state reproducibly, for example by driving
   `--web --web-no-browser` with a headless browser, or by an offscreen GL render
   of the runner. Until it exists, take the shots by hand in `--web` and say so.
-- Check contrast: text ≥ 4.5:1, UI edges and icons ≥ 3:1, in both themes.
+- Check contrast: text ≥ 4.5:1, UI edges and icons ≥ 3:1, in both themes
+  (`python docs/design/prototype/tools/contrast.py` prints the token pairs).
+- **Review it** with [review.md](review.md): the scored critique, a P0–P3 audit and the
+  harden checklist. Put the scores and open findings into the PR description.
 - Run the tests as well: `uv run pytest apps/editor-gui`, `uv run ruff check`,
   `uv run pyright`. Pass the headless tests for new widgets (pattern:
   `widgets/tests/test_dialog_placement.py`).
@@ -153,3 +193,9 @@ A design change is not done until you have **seen** it.
 | use a new font size | pick a step of the type scale |
 | add a border/box to separate content | try space, then a type step, then a divider |
 | claim "looks better" without screenshots | take the screenshot matrix |
+| put tabs inside an editor tab, or a second toggle row | one toggle at most; pages go into a page list |
+| put an input field, combo or checkbox into a list row | overview + detail: edit in the detail or inspector |
+| add a lock / "Edit" mode to protect data | no locks: move the editor out of the workspace instead |
+| make text smaller to fit more in | hide what the workspace does not need |
+| open every list click in a new tab | preview tab; it becomes a normal tab on double-click/Enter/edit |
+| follow this text where the prototype shows otherwise | follow the prototype, then fix the skill |

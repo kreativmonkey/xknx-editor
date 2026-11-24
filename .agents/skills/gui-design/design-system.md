@@ -95,16 +95,32 @@ Starting values. Verify contrast after every change.
 | `text.primary` | `#DFE1E5` | `#1E1F22` | body |
 | `text.secondary` | `#A5A8B0` | `#64666D` | metadata, hints, captions |
 | `text.disabled` | `#6F737A` | `#A8ADBD` | disabled |
-| `accent` | `#3370E8` | `#3370E8` | primary button, focus ring, links, selection marker |
+| `accent` | `#3370E8` | `#3370E8` | fills and lines: primary button, focus ring, active tab line, current step, progress fill, changed dot; selection marker in light only |
 | `accent.hover` | `#2B62D3` | `#2E5FC9` | |
 | `accent.text` | `#FFFFFF` | `#FFFFFF` | text on accent |
-| `accent.link` | `#93B3F3` | `#2B5EC3` | accent as text (links, selected menu item); ≥ 4.5:1 on surface, raised, inset, selected |
+| `accent.link` | `#93B3F3` | `#2B5EC3` | accent as text or icon (links, selected menu item, selected sidebar icon); selection marker in dark; ≥ 4.5:1 on surface, raised, inset, selected |
 | `status.success` | `#5FB865` | `#1F843A` | ok / programmed / connected |
 | `status.warning` | `#E5A63B` | `#A76400` | needs attention |
 | `status.error` | `#F86775` | `#D1293D` | failed / invalid |
 | `status.info` | `#6395F8` | `#3370E8` | neutral notices |
 | `status.*.text` | success `#79C37E`, warning `#E5A73D`, error `#FA96A0`, info `#8FB3FA` | `#1B7232`, `#8E5500`, `#BC2537`, `#2B5EC3` | status as text, also on `status.*.subtle`; `status.*` itself stays for dots and icons |
 | `status.*.subtle` | 15 % of the status color on `bg.surface` | 10 % | background of banners/badges |
+
+Which role when:
+
+- **Surfaces:** `bg.canvas` behind everything (top bar, sidebar, tab bar), `bg.surface` for
+  content, `bg.raised` for anything floating or "on" (popups, active segment, selected sidebar
+  row), `bg.inset` for things you type into or that sit lower (inputs, code, segment track).
+- **Lines:** `border.subtle` separates content (dividers, table lines, panel edges);
+  `border.control` outlines a control you operate (inputs, selects, toggles, bordered buttons,
+  search); `border.strong` only edges a dialog, popup, menu or sheet.
+- **Accent:** `accent` only as a fill or line; as text or a small icon use `accent.link`
+  (`accent` on `bg.surface` in dark is below 4.5:1). Selection marker ≥ 3:1 on `bg.selected`:
+  `accent.link` in dark.
+- **Status:** `status.*` for dots, icons and progress; `status.*.text` for words, also on
+  `status.*.subtle` backgrounds; `status.*.subtle` only as the background of banners/badges.
+- **Text:** `text.secondary` for metadata and placeholders, `text.disabled` only for disabled
+  controls (it is below 4.5:1 on purpose; the reason must be readable elsewhere).
 
 `theme.status_color(kind)` stays as a thin wrapper over `color("status.<kind>")`
 during the migration.
