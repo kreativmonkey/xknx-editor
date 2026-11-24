@@ -2,7 +2,7 @@
 (function () {
   var XP = (window.XP = window.XP || {});
   var KEY = "xp-prototype-v1";
-  var PERSIST = ["theme", "workspace", "railExpanded", "widths", "hidden", "customWorkspaces"];
+  var PERSIST = ["theme", "workspace", "railExpanded", "widths", "hidden", "customWorkspaces", "deviceGrouping"];
 
   var params = new URLSearchParams(location.search);
   XP.FAST = params.get("fast") === "1";
@@ -18,6 +18,7 @@
     selection: {},
     widths: { list: 280, inspector: 280 },
     hidden: { list: false },
+    deviceGrouping: "topology",   /* devices list: "topology" (area/line) or "building" */
     customWorkspaces: [],
     dialog: null,
     paletteOpen: false,
@@ -76,6 +77,7 @@
           if (typeof v === "number" && isFinite(v) && v >= 120 && v <= 1000) st.widths[n] = v;
         });
       }
+      if (o.deviceGrouping === "topology" || o.deviceGrouping === "building") st.deviceGrouping = o.deviceGrouping;
       if (o.hidden && typeof o.hidden === "object") {
         Object.keys(st.hidden).forEach(function (n) { if (typeof o.hidden[n] === "boolean") st.hidden[n] = o.hidden[n]; });
       }

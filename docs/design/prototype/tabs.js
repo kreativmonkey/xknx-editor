@@ -63,13 +63,13 @@
     var app = document.getElementById("app");
     app.addEventListener("click", function (e) {
       var row = e.target.closest("[data-row]");
-      if (row && row.closest(".list")) { XP.openObject(row.dataset.kind, row.dataset.row, { pin: false }); return; }
+      if (row && row.closest(".list")) { if (!e.target.closest("[data-action]")) XP.openObject(row.dataset.kind, row.dataset.row, { pin: false }); return; }
       var tab = e.target.closest("[data-tab]");
       if (tab && !e.target.closest("[data-action]")) XP.activateTab(tab.dataset.tab);
     });
     app.addEventListener("dblclick", function (e) {
       var row = e.target.closest("[data-row]");
-      if (row && row.closest(".list")) { XP.openObject(row.dataset.kind, row.dataset.row, { pin: true }); return; }
+      if (row && row.closest(".list")) { if (!e.target.closest("[data-action]")) XP.openObject(row.dataset.kind, row.dataset.row, { pin: true }); return; }
       var tab = e.target.closest("[data-tab]");
       if (tab && !e.target.closest("[data-action]")) XP.pinTab(tab.dataset.tab);
     });

@@ -29,7 +29,10 @@ SCREENSHOT_VIEWS = [
   ("devices", lambda page: page.evaluate("XP.openObject('device','1.1.4',{pin:true})")),
   ("groupObjects", lambda page: page.evaluate(
     "XP.openObject('device','1.1.4',{pin:true}); XP.planning.mode('1.1.4','objects'); XP.planning.select('1.1.4',['go1','go4'])")),
+  ("devices-building", lambda page: page.evaluate("XP.set({deviceGrouping:'building'}); XP.openObject('device','1.1.4',{pin:true})")),
   ("groupAddresses", lambda page: page.evaluate("XP.set({view:'groupAddresses'}); XP.openObject('groupAddress','1/2/3',{pin:true})")),
+  ("groupAddresses-group", lambda page: page.evaluate("XP.set({view:'groupAddresses'}); XP.openObject('gaGroup','1',{pin:true})")),
+  ("gaCreate", lambda page: page.evaluate("XP.set({view:'groupAddresses'}); XP.gaCreate('ga','1/2')")),
   ("commissioning", lambda page: page.evaluate(
     "XP.set({workspace:'commissioning', view:'commissioningDevices'}); XP.openObject('commissioningDevice','1.1.4',{pin:true}); XP.queue.enqueue('1.1.5','all')")),
   ("changeAddress", lambda page: page.evaluate(
@@ -651,10 +654,10 @@ def test_ga_tree(ctx):
   assert tree.locator("[data-level=main]").count() == 3
   assert tree.locator(":is(input,select,textarea,[contenteditable])").count() == 0
   assert tree.locator("[data-row='1/2/3']").count() == 1
-  page.click("[data-level=main][data-group='1']")
+  page.click("[data-level=main][data-group='1'] .chev")
   assert tree.locator("[data-row='1/2/3']").count() == 0
   assert page.locator("[data-level=main][data-group='1']").get_attribute("aria-expanded") == "false"
-  page.click("[data-level=main][data-group='1']")
+  page.click("[data-level=main][data-group='1'] .chev")
   assert tree.locator("[data-row='1/2/3']").count() == 1
   page.click("[data-row='1/2/3']")
   assert page.evaluate("XP.state.activeTab") == "groupAddress:1/2/3"
@@ -1480,6 +1483,288 @@ def test_at_most_three_type_sizes(ctx):
       sizes = type_sizes(page)
       assert len(sizes) <= 3, (name, w, sizes)
       page.context.close()
+
+
+def menu_texts(page):
+  return page.locator("[data-testid=context-menu] button").all_inner_texts()
+
+
+@test
+def test_device_grouping_switch(ctx):
+  page = ctx.page()
+  heads = lambda: page.locator("[data-testid=dev-group]").all_inner_texts()
+  rows = lambda: page.locator("[data-testid=device-rows] [data-row]").count()
+  n = rows()
+  assert n == 14 and any("Linie EG" in t for t in heads()), heads()
+  assert page.locator("[data-testid=grouping-topology]").get_attribute("aria-pressed") == "true"
+  page.click("[data-testid=grouping-building]")
+  assert page.locator("[data-testid=grouping-building]").get_attribute("aria-pressed") == "true"
+  hs = heads()
+  for t in ("Musterhaus", "Erdgeschoss", "Obergeschoss", "Wohnzimmer", "Bad", "Technikraum"):
+    assert t in hs, (t, hs)
+  assert hs.index("Musterhaus") < hs.index("Erdgeschoss") < hs.index("Wohnzimmer") < hs.index("Obergeschoss")
+  assert rows() == n
+  # rows below their room header
+  order = page.evaluate("[...document.querySelectorAll('[data-testid=device-rows] > *')].map(e => e.dataset.row || e.textContent)")
+  i = order.index("Küche")
+  assert order[i + 1] == "1.1.4" and order[i + 2] == "1.1.7", order[i:i + 3]
+  # filter keeps working, selection and preview tab behave as in topology
+  page.fill("[data-testid=list-filter]", "Küche")
+  assert page.locator("[data-testid=device-rows] [data-row]").count() == 2
+  page.fill("[data-testid=list-filter]", "")
+  page.click("[data-row='1.2.2']")
+  assert page.evaluate("XP.state.activeTab") == "device:1.2.2"
+  assert page.locator("[data-row='1.2.2']").get_attribute("aria-selected") == "true"
+  page.click("[data-row='1.1.4']", button="right")
+  assert "Anheften" in menu_texts(page)[1]
+  page.keyboard.press("Escape")
+  page.dblclick("[data-row='1.1.7']")
+  assert page.evaluate("XP.state.tabs.find(t => t.id === 'device:1.1.7').pinned") is True
+  # persists over a reload
+  page.reload()
+  assert page.locator("[data-testid=grouping-building]").get_attribute("aria-pressed") == "true"
+  assert "Obergeschoss" in heads()
+  # a device without a room goes under "Ohne Raum"
+  page.evaluate("XP.data.devices[0].room = ''; XP.render()")
+  assert heads()[-1] == "Ohne Raum"
+  page.click("[data-testid=grouping-topology]")
+  page.reload()
+  assert page.locator("[data-testid=grouping-topology]").get_attribute("aria-pressed") == "true"
+  page.context.close()
+  page = ctx.page(400, 860)
+  page.click("[data-testid=grouping-building]")
+  assert page.locator("[data-testid=dev-group]").first.is_visible()
+  page.context.close()
+
+
+def ga_page(ctx, w=1280, h=800):
+  page = ctx.page(w, h)
+  if w < 600:
+    page.click("[data-testid=nav-button]")
+  page.click("[data-view=groupAddresses]")
+  return page
+
+
+@test
+def test_ga_filter(ctx):
+  page = ga_page(ctx)
+  tree = page.locator("[data-testid=ga-tree]")
+  total = tree.locator(".row.ga").count()
+  page.fill("[data-testid=ga-filter]", "Küche")
+  hits = tree.locator(".row.ga")
+  assert 0 < hits.count() < total
+  assert all("Küche" in t for t in hits.all_inner_texts())
+  # parents of the matches stay visible and expanded even when collapsed before
+  assert tree.locator("[data-level=main]").count() >= 1 and tree.locator("[data-level=mid]").count() >= 1
+  assert "false" not in [e for e in tree.locator("[data-level]").evaluate_all("els => els.map(e => e.getAttribute('aria-expanded'))")]
+  page.fill("[data-testid=ga-filter]", "1/2/3")
+  assert tree.locator(".row.ga").count() == 1
+  page.fill("[data-testid=ga-filter]", "zzzz")
+  empty = page.locator("[data-testid=ga-empty]")
+  assert "Keine Treffer für „zzzz“" in empty.inner_text()
+  page.click("[data-testid=ga-filter-clear]")
+  assert page.input_value("[data-testid=ga-filter]") == ""
+  assert tree.locator(".row.ga").count() == total
+  page.context.close()
+
+
+def open_create(page, how, level_label):
+  if how == "toolbar":
+    page.click("[data-testid=ga-new]")
+    page.click(f"[data-testid=context-menu] >> text={level_label}")
+  return page.locator("[data-testid=dialog]")
+
+
+@test
+def test_ga_create(ctx):
+  page = ga_page(ctx)
+  # toolbar: the three entries; nothing selected -> first group as parent
+  page.click("[data-testid=ga-new]")
+  assert menu_texts(page) == ["Hauptgruppe…", "Mittelgruppe…", "Gruppenadresse…"], menu_texts(page)
+  page.click("[data-testid=context-menu] >> text=Hauptgruppe…")
+  dlg = page.locator("[data-testid=dialog]")
+  assert dlg.get_attribute("data-density") == "comfortable"
+  assert page.locator("[data-testid=dialog-title]").inner_text() == "Hauptgruppe anlegen"
+  assert page.input_value("[data-testid=create-number]") == "4"
+  confirm = page.locator("[data-testid=create-confirm]")
+  assert confirm.is_disabled()  # no name yet
+  page.fill("[data-testid=create-name]", "Lüftung")
+  assert confirm.inner_text() == "Hauptgruppe 4 anlegen" and confirm.is_enabled()
+  page.fill("[data-testid=create-number]", "2")
+  assert "bereits vergeben" in page.locator("[data-testid=create-error]").inner_text() and confirm.is_disabled()
+  page.fill("[data-testid=create-number]", "32")
+  assert "0 bis 31" in page.locator("[data-testid=create-error]").inner_text() and confirm.is_disabled()
+  page.fill("[data-testid=create-number]", "")
+  assert confirm.is_disabled()
+  page.fill("[data-testid=create-number]", "4")
+  confirm.click()
+  assert page.locator("[data-level=main][data-group='4']").inner_text().count("Lüftung") == 1
+  assert page.evaluate("XP.state.activeTab") == "gaGroup:4"
+  # detail pane of the new main group: buttons create a middle group in it
+  assert page.locator("[data-testid=group-title]").inner_text() == "Lüftung"
+  page.click("[data-testid=group-new-mid]")
+  assert page.input_value("[data-testid=create-number]") == "0"
+  assert page.locator("[data-testid=create-parent]").input_value() == "4"
+  page.fill("[data-testid=create-name]", "Zuluft")
+  page.locator("[data-testid=create-confirm]").click()
+  assert page.evaluate("XP.state.activeTab") == "gaGroup:4/0"
+  # context menu on that middle group: new address in it, previewed afterwards
+  page.click("[data-level=mid][data-group='4/0']", button="right")
+  assert "Neue Gruppenadresse…" in menu_texts(page) and "Neue Mittelgruppe…" not in menu_texts(page)
+  page.click("[data-testid=context-menu] >> text=Neue Gruppenadresse…")
+  assert page.input_value("[data-testid=create-number]") == "1"
+  page.fill("[data-testid=create-name]", "Zuluft Bad")
+  assert page.locator("[data-testid=create-confirm]").inner_text() == "Gruppenadresse 4/0/1 anlegen"
+  page.locator("[data-testid=create-confirm]").click()
+  assert page.evaluate("XP.state.activeTab") == "groupAddress:4/0/1"
+  assert page.locator("[data-testid=ga-title]").inner_text() == "Zuluft Bad"
+  assert page.locator("[data-row='4/0/1']").get_attribute("aria-selected") == "true"
+  # context menu on a main group: new middle group in it; next free number continues
+  page.click("[data-level=main][data-group='1']", button="right")
+  assert "Neue Mittelgruppe…" in menu_texts(page) and "Löschen…" in menu_texts(page)
+  page.click("[data-testid=context-menu] >> text=Neue Mittelgruppe…")
+  assert page.input_value("[data-testid=create-number]") == "3"
+  page.locator("[data-testid=dlg-cancel]").click()
+  # context menu on an address: next free address in its group (1/2 holds 1..8)
+  page.click("[data-row='1/2/3']", button="right")
+  page.click("[data-testid=context-menu] >> text=Neue Gruppenadresse…")
+  assert page.input_value("[data-testid=create-number]") == "9"
+  page.fill("[data-testid=create-name]", "Licht Garage")
+  assert page.locator("[data-testid=create-confirm]").inner_text() == "Gruppenadresse 1/2/9 anlegen"
+  page.fill("[data-testid=create-number]", "3")
+  assert "1/2/3 ist bereits vergeben" in page.locator("[data-testid=create-error]").inner_text()
+  page.fill("[data-testid=create-number]", "256")
+  assert "0 bis 255" in page.locator("[data-testid=create-error]").inner_text()
+  page.fill("[data-testid=create-number]", "9")
+  page.keyboard.press("Enter")
+  assert page.evaluate("XP.state.activeTab") == "groupAddress:1/2/9"
+  # toolbar with a selected address: parent defaults to its middle group
+  page.click("[data-testid=ga-new]")
+  page.click("[data-testid=context-menu] >> text=Gruppenadresse…")
+  assert page.locator("[data-testid=create-parent]").input_value() == "1/2" and page.input_value("[data-testid=create-number]") == "10"
+  page.keyboard.press("Escape")
+  # main group detail: both create buttons
+  page.click("[data-level=main][data-group='2']")
+  assert page.locator("[data-testid=group-new-mid]").is_visible() and page.locator("[data-testid=group-new-ga]").is_visible()
+  page.click("[data-testid=group-new-ga]")
+  assert page.locator("[data-testid=create-parent]").input_value() == "2/1"
+  page.context.close()
+
+
+@test
+def test_ga_group_detail_rename_delete(ctx):
+  page = ga_page(ctx)
+  page.click("[data-level=main][data-group='3']")
+  assert page.evaluate("XP.state.activeTab") == "gaGroup:3"
+  det = page.locator("[data-testid=group-detail]")
+  assert "3/0/0 – 3/7/255" in page.locator("[data-testid=group-range]").inner_text()
+  assert page.locator("[data-testid=group-counts]").inner_text() == "2 Mittelgruppen · 16 Gruppenadressen"
+  assert det.locator(":is(input,select,textarea)").count() == 0
+  # rename a main group: detail pane button
+  page.click("[data-testid=group-rename]")
+  assert page.locator("[data-testid=dialog-title]").inner_text() == "Umbenennen"
+  assert page.locator("[data-testid=dialog]").get_attribute("data-density") == "comfortable"
+  page.fill("[data-testid=rename-input]", "Klima")
+  page.click("[data-testid=rename-confirm]")
+  assert page.locator("[data-testid=group-title]").inner_text() == "Klima"
+  assert "Klima" in page.locator("[data-level=main][data-group='3']").inner_text()
+  assert "Klima" in page.locator("[data-testid=tabs]").inner_text()
+  # rename a middle group: context menu
+  page.click("[data-level=mid][data-group='3/1']", button="right")
+  page.click("[data-testid=context-menu] >> text=Umbenennen…")
+  assert page.input_value("[data-testid=rename-input]") == "Ist-Temperatur"
+  page.fill("[data-testid=rename-input]", "Istwerte")
+  page.keyboard.press("Enter")
+  assert "Istwerte" in page.locator("[data-level=mid][data-group='3/1']").inner_text()
+  # rename with F2 on a focused group row
+  page.focus("[data-level=mid][data-group='3/2']")
+  page.keyboard.press("F2")
+  assert page.input_value("[data-testid=rename-input]") == "Soll-Temperatur"
+  page.fill("[data-testid=rename-input]", "Sollwerte")
+  page.click("[data-testid=rename-confirm]")
+  assert "Sollwerte" in page.locator("[data-level=mid][data-group='3/2']").inner_text()
+  # delete a middle group: confirmation states the count of removed addresses
+  page.click("[data-level=mid][data-group='3/2']")
+  page.click("[data-testid=group-delete]")
+  assert "8 Gruppenadressen" in page.locator("[data-testid=delete-summary]").inner_text()
+  assert page.locator("[data-testid=delete-confirm]").inner_text() == "8 Gruppenadressen löschen"
+  page.click("[data-testid=dlg-cancel]")
+  assert page.locator("[data-level=mid][data-group='3/2']").count() == 1
+  page.click("[data-testid=group-delete]")
+  page.click("[data-testid=delete-confirm]")
+  assert page.locator("[data-level=mid][data-group='3/2']").count() == 0
+  assert page.locator("[data-row='3/2/1']").count() == 0
+  assert page.evaluate("XP.state.tabs.some(t => t.ref === '3/2')") is False
+  # delete a main group from the context menu: counts mids and addresses
+  page.click("[data-level=main][data-group='3']", button="right")
+  page.click("[data-testid=context-menu] >> text=Löschen…")
+  txt = page.locator("[data-testid=delete-summary]").inner_text()
+  assert "1 Mittelgruppe und 8 Gruppenadressen" in txt, txt
+  page.click("[data-testid=delete-confirm]")
+  assert page.locator("[data-level=main]").count() == 2
+  page.context.close()
+  # narrow: the detail opens as the editor page
+  page = ga_page(ctx, 400, 860)
+  page.click("[data-level=main][data-group='2']")
+  assert page.locator("[data-testid=group-detail]").is_visible()
+  page.context.close()
+
+
+@test
+def test_context_menu_at_pointer(ctx):
+  def near(page, x, y, tol=10):
+    box = page.locator("[data-testid=context-menu]").bounding_box()
+    corners = [(box["x"] + dx, box["y"] + dy) for dx in (0, box["width"]) for dy in (0, box["height"])]
+    d = min(((cx - x) ** 2 + (cy - y) ** 2) ** 0.5 for cx, cy in corners)
+    assert d <= tol, (d, box, x, y)
+  for w, h in ((1280, 800), (400, 860)):
+    page = ga_page(ctx, w, h)
+    for sel in ("[data-row='2/1/3']", "[data-level=mid][data-group='2/2']", "[data-level=main][data-group='3']"):
+      loc = page.locator(sel)
+      loc.scroll_into_view_if_needed()
+      b = loc.bounding_box()
+      x, y = b["x"] + b["width"] * 0.55, b["y"] + b["height"] / 2
+      page.mouse.click(x, y, button="right")
+      near(page, x, y)
+      page.keyboard.press("Escape")
+    # the last visible row, near the bottom edge: the menu flips above the pointer, it does not slide away
+    page.evaluate("document.querySelector('[data-testid=list]').scrollTop = 1e6")
+    last = page.locator("[data-testid=ga-tree] .row.ga").last
+    b = last.bounding_box()
+    x, y = b["x"] + b["width"] * 0.3, b["y"] + b["height"] / 2
+    page.mouse.click(x, y, button="right")
+    near(page, x, y)
+    page.keyboard.press("Escape")
+    # keyboard: opens at the focused row, below it
+    page.focus("[data-row='1/2/3']")
+    page.evaluate("document.querySelector(\"[data-row='1/2/3']\").dispatchEvent(new MouseEvent('contextmenu', {bubbles: true, cancelable: true, clientX: 0, clientY: 0, button: 0}))")
+    box = page.locator("[data-testid=context-menu]").bounding_box()
+    rb = page.locator("[data-row='1/2/3']").bounding_box()
+    assert abs(box["y"] - (rb["y"] + rb["height"])) <= 10 or abs(box["y"] + box["height"] - rb["y"]) <= 10, (box, rb)
+    assert rb["x"] <= box["x"] <= rb["x"] + rb["width"], (box, rb)
+    page.context.close()
+  # a device row, mouse and touch long press
+  page = ctx.page()
+  b = page.locator("[data-row='1.1.6']").bounding_box()
+  x, y = b["x"] + b["width"] * 0.4, b["y"] + b["height"] / 2
+  page.mouse.click(x, y, button="right")
+  near(page, x, y)
+  page.context.close()
+  context = ctx.new_context(viewport={"width": 400, "height": 860}, has_touch=True)
+  page = context.new_page()
+  page.goto(ctx.url())
+  page.click("[data-testid=nav-button]")
+  page.click("[data-view=groupAddresses]")
+  page.locator("[data-row='2/1/3']").scroll_into_view_if_needed()
+  b = page.locator("[data-row='2/1/3']").bounding_box()
+  x, y = b["x"] + b["width"] * 0.4, b["y"] + b["height"] / 2
+  page.evaluate(
+    "([x, y]) => document.elementFromPoint(x, y).dispatchEvent(new PointerEvent('pointerdown', {bubbles: true, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y}))",
+    [x, y],
+  )
+  page.wait_for_timeout(650)
+  near(page, x, y)
+  context.close()
 
 
 def screenshots(ctx, out):

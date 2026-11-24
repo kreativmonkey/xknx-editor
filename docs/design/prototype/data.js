@@ -117,7 +117,14 @@
   }
 
   XP.data = {
-    project: { name: "Musterhaus", lines: [{ id: "1.1", name: "Linie EG" }, { id: "1.2", name: "Linie OG" }] },
+    project: {
+      name: "Musterhaus", lines: [{ id: "1.1", name: "Linie EG" }, { id: "1.2", name: "Linie OG" }],
+      /* building -> floor -> rooms; a device whose room is in none of them is listed under "Ohne Raum" */
+      buildings: [{ id: "b1", name: "Musterhaus", floors: [
+        { id: "eg", name: "Erdgeschoss", rooms: ["Flur", "Wohnzimmer", "Küche", "Büro", "Terrasse", "Technikraum", "Hauswirtschaftsraum"] },
+        { id: "og", name: "Obergeschoss", rooms: ["Schlafzimmer", "Bad", "Dach"] },
+      ] }],
+    },
     devices: devices, groups: groups, groupAddresses: ga, telegrams: tg,
     statusLabels: { ok: "Programmiert", paramsChanged: "Parameter geändert", addressesChanged: "Adresse geändert", "new": "Neu", error: "Fehler" },
   };
