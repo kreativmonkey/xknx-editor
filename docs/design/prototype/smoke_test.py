@@ -380,6 +380,47 @@ def test_long_press_dispatches_contextmenu(ctx):
   page.context.close()
 
 
+@test
+def test_narrow_nav_drawer(ctx):
+  page = ctx.page(400, 860)
+  assert page.locator("[data-testid=rail]").count() == 0
+  assert page.locator("[data-testid=nav-drawer]").count() == 0
+  assert page.locator("[data-testid=nav-button]").is_visible()
+  page.click("[data-testid=nav-button]")
+  assert page.locator("[data-testid=nav-drawer]").is_visible()
+  assert page.locator("[data-testid=nav-drawer] .item .lbl").first.is_visible()
+  assert page.evaluate("document.body.scrollWidth <= innerWidth")
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=nav-drawer]").count() == 0
+  page.click("[data-testid=nav-button]")
+  page.click("[data-testid=nav-drawer] [data-view=groupAddresses]")
+  assert page.locator("[data-testid=nav-drawer]").count() == 0
+  assert page.evaluate("XP.state.view") == "groupAddresses"
+  assert page.locator("[data-testid=list]").is_visible()
+  # the Ansicht menu is a separate control
+  page.click("[data-testid=view-menu-btn]")
+  assert page.locator("[data-testid=view-menu]").is_visible()
+  page.context.close()
+  page = ctx.page(1280, 800)
+  assert not page.locator("[data-testid=nav-button]").is_visible()
+  page.context.close()
+
+
+@test
+def test_pin_button_touch_flow(ctx):
+  page = ctx.page(800, 1100)
+  page.click("[data-testid=list-button]")
+  page.click("[data-row='1.1.4']")
+  page.click("[data-testid=pin-tab]")
+  assert page.evaluate("XP.state.tabs.map(t => t.pinned)") == [True]
+  assert page.locator("[data-testid=pin-tab]").count() == 0
+  page.click("[data-testid=list-button]")
+  page.click("[data-row='1.1.12']")
+  assert tab_count(page) == 2, tab_count(page)
+  assert page.locator("[data-testid=pin-tab]").is_visible()
+  page.context.close()
+
+
 def screenshots(ctx, out):
   out.mkdir(parents=True, exist_ok=True)
   count = 0

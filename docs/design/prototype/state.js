@@ -25,6 +25,7 @@
     wsMenuOpen: false,
     viewMenuOpen: false,
     drawerOpen: false,
+    navOpen: false,
     stackEditor: false,
   };
 

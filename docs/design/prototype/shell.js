@@ -29,7 +29,7 @@
     var custom = s.customWorkspaces.map(function (c) { return { id: c.id, label: c.name, icon: "✎" }; });
     var all = Object.keys(XP.WORKSPACES).map(function (k) { return { id: k, label: XP.WORKSPACES[k].label, icon: XP.WORKSPACES[k].icon }; }).concat(custom);
     return h`<div class="topbar" data-testid="topbar">
-      <span class="product">XKNX</span><span class="project t-caption trunc">${XP.data.project.name}</span>
+      <button class="btn nav-btn" data-testid="nav-button" data-action="navDrawer" aria-expanded="${s.navOpen}" aria-label="Navigation" title="Navigation">☰</button><span class="product">XKNX</span><span class="project t-caption trunc">${XP.data.project.name}</span>
       <div class="ws-wrap">
         <button class="btn ws" data-testid="ws-switcher" data-action="wsMenu" aria-haspopup="menu" aria-expanded="${s.wsMenuOpen}" title="${w.label}"><span class="ico">${w.icon}</span><span class="wl trunc">${w.label}</span><span>▾</span></button>
         ${s.wsMenuOpen ? h`<div class="menu" role="menu" data-testid="ws-menu">${all.map(function (a) {
@@ -37,7 +37,7 @@
         })}</div>` : ""}
       </div>
       <div class="ws-wrap view-wrap">
-        <button class="btn" data-testid="view-menu-btn" data-action="viewMenu" aria-haspopup="menu" aria-expanded="${s.viewMenuOpen}" title="Ansicht"><span>☰</span><span class="wl">Ansicht ▾</span></button>
+        <button class="btn" data-testid="view-menu-btn" data-action="viewMenu" aria-haspopup="menu" aria-expanded="${s.viewMenuOpen}" title="Ansicht"><span>◫</span><span class="wl">Ansicht ▾</span></button>
         ${s.viewMenuOpen ? viewMenu() : ""}
       </div>
       <span class="spacer"></span>
@@ -61,7 +61,9 @@
 
   function rail() {
     var s = XP.state, w = ws();
-    var exp = s.railExpanded;
+    var narrow = XP.formFactor() === "narrow";
+    if (narrow && !s.navOpen) return "";
+    var exp = narrow || s.railExpanded;
     var groups = w.rail.map(function (g) {
       return h`${exp ? h`<div class="grp t-label">${g.group}</div>` : ""}${g.items.map(function (id) {
         var v = XP.VIEWS[id] || { label: id, icon: "?" };
@@ -69,6 +71,7 @@
         return h`<button class="item ${s.view === id ? "sel" : ""}" data-action="view" data-view="${id}" data-label="${v.label}" title="${v.label}"><span class="ico">${v.icon}</span><span class="lbl trunc">${v.label}</span>${b ? h`<span class="badge warn">${b}</span>` : c !== null ? h`<span class="count">${c}</span>` : ""}</button>`;
       })}`;
     });
+    if (narrow) return h`<div class="scrim nav-scrim" data-action="closeNav"></div><nav class="rail expanded navdrawer" data-testid="nav-drawer" aria-label="Ansichten">${groups}</nav>`;
     return h`<nav class="rail ${exp ? "expanded" : "collapsed"}" data-testid="rail" aria-label="Ansichten">${groups}<button class="item toggle" data-testid="rail-toggle" data-action="railToggle" title="${exp ? "Einklappen" : "Ausklappen"}"><span class="ico">${exp ? "«" : "»"}</span><span class="lbl">${exp ? "Einklappen" : ""}</span></button></nav>`;
   }
 
@@ -94,7 +97,7 @@
       : f === "tablet" ? h`<button class="btn lead" data-testid="list-button" data-action="drawer" aria-expanded="${s.drawerOpen}">Liste</button>` : "";
     return h`<div class="tabbar">${lead}<div class="tabs" data-testid="tabs" role="tablist" data-scroll="tabs">${s.tabs.map(function (t) {
       var on = t.id === s.activeTab, label = XP.tabLabel(t);
-      return h`<div class="tab ${on ? "on" : ""} ${t.pinned ? "" : "preview"}" role="tab" aria-selected="${on}" tabindex="0" data-tab="${t.id}" title="${label}"><span class="tl trunc">${label}</span><button class="x" data-action="closeTab" data-id="${t.id}" aria-label="Tab schließen: ${label}" title="Schließen">✕</button></div>`;
+      return h`<div class="tab ${on ? "on" : ""} ${t.pinned ? "" : "preview"}" role="tab" aria-selected="${on}" tabindex="0" data-tab="${t.id}" title="${label}"><span class="tl trunc">${label}</span>${t.pinned ? "" : h`<button class="x pin" data-testid="pin-tab" data-action="pinTab" data-id="${t.id}" aria-label="Anheften: ${label}" title="Anheften">⊙</button>`}<button class="x" data-action="closeTab" data-id="${t.id}" aria-label="Tab schließen: ${label}" title="Schließen">✕</button></div>`;
     })}</div></div>`;
   }
 
@@ -175,14 +178,17 @@
     ["pointerup", "pointercancel", "pointermove"].forEach(function (n) { app.addEventListener(n, function () { clearTimeout(tipTimer); }); });
   }
 
+  XP.actions.navDrawer = function () { XP.set({ navOpen: !XP.state.navOpen }); };
+  XP.actions.closeNav = function () { XP.set({ navOpen: false }); };
+  XP.actions.pinTab = function (el) { XP.pinTab(el.dataset.id); };
   XP.actions.theme = function () { XP.set({ theme: XP.state.theme === "dark" ? "light" : "dark" }); };
   XP.actions.railToggle = function () { XP.set({ railExpanded: !XP.state.railExpanded }); };
   XP.actions.wsMenu = function () { XP.set({ wsMenuOpen: !XP.state.wsMenuOpen, viewMenuOpen: false }); };
   XP.actions.palette = function () { XP.set({ paletteOpen: true }); };
-  XP.actions.view = function (el) { XP.set({ view: el.dataset.view, stackEditor: false, drawerOpen: false }); };
+  XP.actions.view = function (el) { XP.set({ view: el.dataset.view, stackEditor: false, drawerOpen: false, navOpen: false }); };
   XP.actions.workspace = function (el) {
     var id = el.dataset.ws, w = XP.WORKSPACES[id], c = customWs(id);
-    var patch = { workspace: id, view: w ? w.defaultView : c ? c.view : XP.state.view, wsMenuOpen: false, stackEditor: false };
+    var patch = { workspace: id, view: w ? w.defaultView : c ? c.view : XP.state.view, wsMenuOpen: false, stackEditor: false, navOpen: false };
     if (c) {
       if (c.widths) patch.widths = Object.assign({}, XP.state.widths, c.widths);
       if (c.hidden) patch.hidden = Object.assign({}, XP.state.hidden, c.hidden);

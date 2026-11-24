@@ -137,7 +137,7 @@
   XP.starters.push(function () {
     window.addEventListener("resize", function () {
       var before = ff;
-      if (XP.formFactor() !== before) XP.render();
+      if (XP.formFactor() !== before) { if (XP.state.navOpen) XP.state.navOpen = false; XP.render(); }
     });
     document.addEventListener("keydown", function (e) {
       if (e.key !== "Escape") return;
@@ -145,6 +145,7 @@
       if (s.wsMenuOpen) p.wsMenuOpen = false;
       if (s.viewMenuOpen) p.viewMenuOpen = false;
       if (s.drawerOpen) p.drawerOpen = false;
+      if (s.navOpen) p.navOpen = false;
       if (s.dialog && s.dialog.kind === "saveWorkspace") p.dialog = null;
       if (Object.keys(p).length) XP.set(p);
     });

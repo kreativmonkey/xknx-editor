@@ -111,9 +111,10 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 [data-ff=tablet] .rail.expanded .item{justify-content:center;padding:0}
 [data-ff=tablet] .search,[data-ff=narrow] .search{width:auto;flex:1;max-width:300px}
 /* phone: drill-down stack */
-[data-ff=narrow] .rail.expanded{width:48px}
-[data-ff=narrow] .rail.expanded .lbl,[data-ff=narrow] .rail.expanded .count,[data-ff=narrow] .rail.expanded .badge,[data-ff=narrow] .rail.expanded .grp{display:none}
-[data-ff=narrow] .rail.expanded .item{justify-content:center;padding:0}
+[data-ff=narrow] .nav-btn{display:inline-flex}
+.nav-btn{display:none}
+.rail.navdrawer{position:absolute;left:0;top:0;bottom:0;width:240px;z-index:15;border-right:1px solid var(--border-strong)}
+.scrim.nav-scrim{inset:0}
 [data-ff=narrow] .list{flex:1;min-width:0;width:auto;border-right:0}
 [data-ff=narrow][data-stack=list] .main{display:none}
 [data-ff=narrow] .topbar{gap:var(--space-2);padding:0 var(--space-2)}
