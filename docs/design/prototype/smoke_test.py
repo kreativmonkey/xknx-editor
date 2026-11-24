@@ -29,6 +29,12 @@ SCREENSHOT_VIEWS = [
   ("groupObjects", lambda page: page.evaluate(
     "XP.openObject('device','1.1.4',{pin:true}); XP.planning.mode('1.1.4','objects'); XP.planning.select('1.1.4',['go1','go4'])")),
   ("groupAddresses", lambda page: page.evaluate("XP.set({view:'groupAddresses'}); XP.openObject('groupAddress','1/2/3',{pin:true})")),
+  ("commissioning", lambda page: page.evaluate(
+    "XP.set({workspace:'commissioning', view:'commissioningDevices'}); XP.openObject('commissioningDevice','1.1.4',{pin:true}); XP.queue.enqueue('1.1.5','all')")),
+  ("changeAddress", lambda page: page.evaluate(
+    "XP.set({workspace:'commissioning', view:'commissioningDevices'}); XP.openObject('commissioningDevice','1.1.4',{pin:true}); XP.openDialog('changeAddress',{ref:'1.1.4'})")),
+  ("replaceDevice", lambda page: page.evaluate(
+    "XP.set({workspace:'commissioning', view:'commissioningDevices'}); XP.openDialog('replace',{ref:'1.1.5'}); Object.assign(XP.state.dialog,{step:3,model:'other',found:true}); XP.render()")),
 ]
 SIZES = [(1280, 800), (800, 1100), (400, 860)]
 THEMES = ["light", "dark"]
@@ -716,6 +722,255 @@ def test_device_editor_long_names_narrow(ctx):
   assert page.evaluate("document.body.scrollWidth <= innerWidth")
   page.click("[data-testid=mode-objects]")
   assert page.evaluate("document.body.scrollWidth <= innerWidth")
+  page.context.close()
+
+
+def go_commissioning(page, view=None):
+  page.click("[data-testid=ws-switcher]")
+  page.click("[data-ws=commissioning]")
+  if view:
+    page.click(f"[data-view={view}]")
+
+
+def row_addrs(page):
+  return page.eval_on_selector_all("[data-testid=com-rows] [data-row]", "els => els.map(e => e.dataset.row)")
+
+
+def ctx_menu(page, addr, entry):
+  page.click(f"[data-testid=com-rows] [data-row='{addr}']", button="right")
+  page.click(f"[data-testid=context-menu] >> text={entry}")
+
+
+@test
+def test_open_filter(ctx):
+  page = ctx.page()
+  go_commissioning(page)
+  assert len(row_addrs(page)) == page.evaluate("XP.data.devices.length")
+  page.click("[data-testid=filter-open]")
+  want = page.evaluate("XP.data.devices.filter(d => d.status !== 'ok').map(d => d.address)")
+  got = row_addrs(page)
+  assert sorted(got) == sorted(want) and 0 < len(got) < page.evaluate("XP.data.devices.length"), (got, want)
+  statuses = page.eval_on_selector_all("[data-testid=com-rows] [data-testid=status-badge]", "els => els.map(e => e.dataset.status)")
+  assert "ok" not in statuses
+  page.click("[data-testid=filter-error]")
+  assert row_addrs(page) == ["1.2.1"], row_addrs(page)
+  assert "offen" in page.locator("[data-view=commissioningDevices]").inner_text()
+  page.context.close()
+
+
+@test
+def test_program_proposes_scope(ctx):
+  page = ctx.page()
+  go_commissioning(page)
+  page.click("[data-row='1.1.4']")
+  assert page.locator("[data-testid=program-primary]").inner_text().strip() == "Parameter programmieren"
+  reason = page.locator("[data-testid=scope-reason]").inner_text()
+  assert "nur Parameter geändert" in reason and "ca. 20 s" in reason, reason
+  assert page.locator("[data-testid=change-summary]").inner_text().startswith("3 Parameter in Kanal A")
+  page.click("[data-testid=program-primary]")
+  assert page.evaluate("XP.queue.items().map(i => i.ref + ':' + i.scope).join()") == "1.1.4:params"
+  page.context.close()
+
+
+@test
+def test_queue_runs_serially(ctx):
+  page = ctx.page()
+  go_commissioning(page)
+  page.click("[data-testid=filter-open]")
+  before = len(row_addrs(page))
+  max_run = page.evaluate("""async () => {
+    ['1.1.4', '1.2.7', '1.1.3'].forEach(a => XP.queue.enqueue(a, 'all'));
+    let max = 0; const t0 = Date.now();
+    while (XP.queue.items().some(i => i.status === 'wartet' || i.status === 'läuft')) {
+      max = Math.max(max, XP.queue.items().filter(i => i.status === 'läuft').length,
+        document.querySelectorAll('[data-testid=status-badge][title*="wird programmiert"]').length);
+      await new Promise(r => setTimeout(r, 10));
+      if (Date.now() - t0 > 20000) break;
+    }
+    return max;
+  }""")
+  assert max_run == 1, max_run
+  got = row_addrs(page)
+  assert len(got) == before - 3 and not {"1.1.4", "1.2.7", "1.1.3"} & set(got), got
+  page.click("[data-view=queue]")
+  assert page.locator("[data-testid=queue-item][data-status=fertig]").count() == 3
+  page.context.close()
+
+
+@test
+def test_retry_after_error(ctx):
+  page = ctx.page()
+  go_commissioning(page, "queue")
+  assert page.locator("[data-testid=queue-empty]").is_visible()
+  page.evaluate("XP.queue.enqueue('1.1.5', 'all')")
+  page.wait_for_selector("[data-testid=queue-item][data-status=fehler]")
+  assert page.locator("[data-testid=queue-error]").inner_text().strip() != ""
+  assert page.evaluate("XP.data.devices.find(d => d.address === '1.1.5').status") == "error"
+  page.click("[data-testid=qretry]")
+  page.wait_for_selector("[data-testid=queue-item][data-status=fertig]")
+  assert page.evaluate("XP.data.devices.find(d => d.address === '1.1.5').status") == "ok"
+  page.context.close()
+
+
+@test
+def test_cancel_waiting(ctx):
+  page = ctx.page()
+  go_commissioning(page, "queue")
+  page.evaluate("XP.queue.enqueue('1.1.4','all'); XP.queue.enqueue('1.2.7','all')")
+  page.click("[data-testid=queue-item][data-ref='1.2.7'] [data-testid=qcancel]")
+  assert page.locator("[data-testid=queue-item][data-ref='1.2.7']").count() == 0
+  page.wait_for_selector("[data-testid=queue-item][data-ref='1.1.4'][data-status=fertig]")
+  page.context.close()
+
+
+@test
+def test_change_address_flow(ctx):
+  page = ctx.page()
+  go_commissioning(page)
+  ctx_menu(page, "1.1.4", "Adresse ändern…")
+  assert page.locator("[data-testid=dialog]").is_visible()
+  btn = page.locator("[data-testid=addr-confirm]")
+  assert btn.inner_text().strip() == "Adresse auf 1.1.20 ändern"
+  page.fill("[data-testid=addr-input]", "1.1.5")
+  assert page.evaluate("document.activeElement.dataset.testid") == "addr-input"
+  assert "bereits vergeben" in page.locator("[data-testid=addr-check]").inner_text()
+  assert btn.is_disabled()
+  page.fill("[data-testid=addr-input]", "1.1.21")
+  assert btn.inner_text().strip() == "Adresse auf 1.1.21 ändern" and btn.is_enabled()
+  btn.click()
+  assert page.locator("[data-testid=dialog]").count() == 0
+  assert page.locator("[data-testid=com-rows] [data-row='1.1.21']").count() == 1
+  assert page.locator("[data-testid=com-rows] [data-row='1.1.4']").count() == 0
+  page.context.close()
+
+
+@test
+def test_change_address_keeps_tabs(ctx):
+  page = ctx.page()
+  go_commissioning(page)
+  page.click("[data-row='1.1.4']")
+  ctx_menu(page, "1.1.4", "Adresse ändern…")
+  page.click("[data-testid=addr-confirm]")
+  assert page.evaluate("XP.state.activeTab") == "commissioningDevice:1.1.20"
+  assert "Schaltaktor" in page.locator("[data-testid=device-title]").inner_text()
+  page.context.close()
+
+
+@test
+def test_replace_device_flow(ctx):
+  page = ctx.page()
+  go_commissioning(page)
+  ctx_menu(page, "1.1.5", "Gerät tauschen…")
+  assert page.locator("[data-testid=steps] [data-step]").count() == 4
+  page.click("text=Anderes Modell")
+  page.click("[data-testid=dlg-next]")
+  wait = page.locator("[data-testid=wait-button]")
+  assert "Warte auf Programmierknopf…" in wait.inner_text()
+  assert page.locator("[data-testid=dlg-next]").is_disabled()
+  page.click("[data-testid=sim-button]")
+  assert page.locator("[data-testid=found]").is_visible()
+  page.click("[data-testid=dlg-next]")
+  assert page.locator("[data-testid=map-table]").is_visible()
+  assert page.locator("[data-testid=dlg-next]").is_disabled()
+  while page.locator("[data-testid=map-assign]").count():
+    page.locator("[data-testid=map-assign]").first.click()
+  page.click("[data-testid=dlg-next]")
+  assert page.locator("[data-testid=fdsk-open]").is_visible()
+  page.click("[data-testid=replace-confirm]")
+  assert page.locator("[data-testid=dialog]").count() == 0
+  page.wait_for_selector("[data-testid=queue-item][data-ref='1.1.5']")
+  assert "JAL-0810" in page.evaluate("XP.data.devices.find(d => d.address === '1.1.5').product")
+  page.context.close()
+
+
+@test
+def test_replace_same_model_and_serial(ctx):
+  page = ctx.page()
+  go_commissioning(page)
+  ctx_menu(page, "1.1.5", "Gerät tauschen…")
+  page.click("[data-testid=dlg-next]")
+  page.click("text=Seriennummer eingeben")
+  page.fill("[data-testid=serial-input]", "zz")
+  assert page.locator("[data-testid=dlg-next]").is_disabled()
+  page.fill("[data-testid=serial-input]", "00C5:1A2B3C4D")
+  page.click("[data-testid=dlg-next]")
+  assert page.locator("[data-testid=map-table]").count() == 0
+  assert page.locator("[data-testid=takeover]").is_visible()
+  page.click("[data-testid=dlg-back]")
+  assert page.locator("[data-testid=serial-input]").input_value() == "00C5:1A2B3C4D"
+  page.context.close()
+
+
+@test
+def test_dialog_survives_workspace_switch(ctx):
+  page = ctx.page()
+  go_commissioning(page)
+  page.click("[data-row='1.1.4']")
+  ctx_menu(page, "1.1.5", "Gerät tauschen…")
+  assert page.locator("[data-testid=dialog]").is_visible()
+  page.click("[data-testid=ws-switcher]")
+  page.click("[data-ws=planning]")
+  assert page.evaluate("XP.state.workspace") == "planning"
+  assert page.locator("[data-testid=dialog]").is_visible()
+  assert tab_count(page) == 1
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=dialog]").count() == 0
+  assert tab_count(page) == 1
+  page.context.close()
+
+
+@test
+def test_dialog_focus_escape_and_trap(ctx):
+  page = ctx.page()
+  go_commissioning(page)
+  page.click("[data-row='1.1.4']")
+  page.click("[data-testid=more-actions]")
+  page.click("[data-testid=context-menu] >> text=Programmieren…")
+  assert page.locator("[data-testid=dialog]").is_visible()
+  for _ in range(12):
+    page.keyboard.press("Tab")
+    assert page.evaluate("!!document.activeElement.closest('[data-testid=dialog]')")
+  page.keyboard.press("Shift+Tab")
+  assert page.evaluate("!!document.activeElement.closest('[data-testid=dialog]')")
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=dialog]").count() == 0
+  assert page.evaluate("document.activeElement.dataset.fk") == "more-actions"
+  page.context.close()
+
+
+@test
+def test_dialog_widths_and_narrow_sheet(ctx):
+  page = ctx.page()
+  go_commissioning(page)
+  for kind, width in (("program", 480), ("changeAddress", 640), ("replace", 880)):
+    page.evaluate(f"XP.openDialog('{kind}', {{ref: '1.1.4'}})")
+    w = page.locator("[data-testid=dialog]").bounding_box()["width"]
+    assert abs(w - width) <= 1, (kind, w)
+    page.evaluate("XP.closeDialog()")
+  page.context.close()
+  page = ctx.page(400, 860)
+  page.evaluate("XP.set({workspace:'commissioning', view:'commissioningDevices'}); XP.openDialog('replace', {ref: '1.1.5'})")
+  box = page.locator("[data-testid=dialog]").bounding_box()
+  assert box["width"] >= 399 and box["height"] >= 859, box
+  assert page.evaluate("document.body.scrollWidth <= document.body.clientWidth")
+  page.context.close()
+
+
+@test
+def test_commissioning_rows_have_no_inputs(ctx):
+  page = ctx.page()
+  go_commissioning(page)
+  assert page.locator("[data-testid=com-rows] [data-row] input, [data-testid=com-rows] [data-row] select").count() == 0
+  page.context.close()
+
+
+@test
+def test_commissioning_long_name_narrow(ctx):
+  page = ctx.page(400, 860)
+  page.evaluate("XP.set({workspace:'commissioning', view:'commissioningDevices'})")
+  assert page.evaluate("document.body.scrollWidth <= document.body.clientWidth")
+  page.click("[data-row='1.2.9']")
+  assert page.evaluate("document.body.scrollWidth <= document.body.clientWidth")
   page.context.close()
 
 

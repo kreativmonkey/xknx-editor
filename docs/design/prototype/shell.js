@@ -21,6 +21,7 @@
   function badge(view) {
     if (view === "health") return "5";
     if (view === "commissioningDevices") return String(XP.data.devices.filter(function (x) { return x.status !== "ok"; }).length) + " offen";
+    if (view === "queue" && XP.queue) { var n = XP.state.queueItems.filter(function (i) { return i.status !== "fertig"; }).length; return n ? String(n) : null; }
     return null;
   }
 
