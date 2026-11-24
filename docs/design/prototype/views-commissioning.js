@@ -164,7 +164,7 @@
       var n = S.queueItems.filter(function (i) { return i.status === "wartet"; }).length;
       var run = S.queueItems.filter(function (i) { return i.status === "läuft"; }).length;
       var done = S.queueItems.filter(function (i) { return i.status === "fertig"; }).length;
-      return h`<div class="qpage" data-testid="queue-page" data-scroll="queue"><div class="pbar"><span class="t-heading">Warteschlange</span><span class="spacer"></span><span class="t-caption" data-testid="queue-summary">${run} läuft · ${n} wartet</span><button class="btn bordered" data-action="qClear" ${done ? "" : "disabled"}>Fertige entfernen</button></div><div class="t-caption qnote">Der Bus arbeitet ein Gerät nach dem anderen ab. Ein laufender Download wird an einer sicheren Stelle abgebrochen.</div>${queueBlock({ empty: true })}</div>`;
+      return h`<div class="qpage" data-testid="queue-page" data-scroll="queue"><div class="pbar"><span class="t-caption" data-testid="queue-summary">${run} läuft · ${n} wartet</span><span class="spacer"></span><button class="btn bordered" data-action="qClear" ${done ? "" : "disabled"}>Fertige entfernen</button></div><div class="t-caption qnote">Der Bus arbeitet ein Gerät nach dem anderen ab. Ein laufender Download wird an einer sicheren Stelle abgebrochen.</div>${queueBlock({ empty: true })}</div>`;
     },
   };
   XP.VIEWS.connection = {
@@ -186,7 +186,7 @@
         : d.status === "error" ? "Der letzte Programmierversuch ist fehlgeschlagen."
         : d.status === "ok" ? "Keine Änderungen seit dem letzten Programmieren."
         : (ch.length ? ch.length + " Parameter in " + pages.join(", ") : "keine Parameteränderung") + " · " + (d.status === "addressesChanged" ? "Adresse geändert" : "keine Adressänderung");
-      var head = h`<div class="dev-head"><div class="dh-t"><div class="t-heading wrap" data-testid="device-title">${d.name}</div><div class="t-caption wrap">${d.address} · ${d.room} · zuletzt programmiert 12.11.2026</div></div><span class="spacer"></span>${badgeFor(d)}</div>`;
+      var head = h`<div class="dev-head"><div class="dh-t"><div class="t-title wrap" data-testid="device-title">${d.name}</div><div class="t-caption wrap">${d.address} · ${d.room} · zuletzt programmiert 12.11.2026</div></div><span class="spacer"></span>${badgeFor(d)}</div>`;
       var body = h`<div class="com-body" data-scroll="com">
         <section class="callout" data-testid="changes"><div class="t-label">Seit dem letzten Programmieren geändert</div><div class="t-title wrap" data-testid="change-summary">${summary}</div>${ch.length ? h`<ul class="chlist" data-testid="changed-params">${ch.map(function (c) { return h`<li><span class="wrap">${c.p.label}</span><span class="t-caption">${c.page} · ${c.p.def} → ${c.p.value}</span></li>`; })}</ul>` : ""}</section>
         <section class="btnrow"><button class="btn primary" data-testid="program-primary" data-fk="program-primary" data-action="programPrimary" data-ref="${d.address}" data-scope="${pr.scope}" ${busy ? "disabled" : ""}>${sc.label}</button><button class="btn bordered" data-testid="scope-other" data-fk="scope-other" data-action="programOther" data-ref="${d.address}" aria-haspopup="dialog">Anderer Umfang ▾</button><button class="btn bordered" data-testid="more-actions" data-fk="more-actions" data-action="moreActions" data-ref="${d.address}" aria-haspopup="menu">Weitere Aktionen ▾</button></section>

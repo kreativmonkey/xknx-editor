@@ -5,7 +5,7 @@
   var XP = window.XP;
   var h = XP.h, S = XP.state;
   XP.starters = XP.starters || [];
-  XP.dialogKinds = {};   /* kind -> function (d) -> { title, sub, width, body, actions } */
+  XP.dialogKinds = XP.dialogKinds || {};   /* kind -> function (d) -> { title, sub, width, body, actions } */
 
   var trigger = null;    /* data-fk of the element that opened the dialog */
 
@@ -24,7 +24,7 @@
     var c = k(d);
     return h`<div class="scrim modal flow" data-testid="dialog-scrim"></div>
       <div class="dialog dlg w${c.width}" data-density="comfortable" role="dialog" aria-modal="true" aria-labelledby="dlg-title" tabindex="-1" data-testid="dialog" data-kind="${d.kind}">
-        <div class="dlg-head"><div class="t-heading wrap" id="dlg-title" data-testid="dialog-title">${c.title}</div>${c.sub ? h`<div class="t-caption wrap">${c.sub}</div>` : ""}</div>
+        <div class="dlg-head"><div class="t-title wrap" id="dlg-title" data-testid="dialog-title">${c.title}</div>${c.sub ? h`<div class="t-caption wrap">${c.sub}</div>` : ""}</div>
         <div class="dlg-body" data-scroll="dlg">${c.body}</div>
         <div class="actions">${c.actions}</div>
       </div>`;
@@ -97,7 +97,7 @@
     var shown = aff.slice(0, 3).map(function (a) { return a.address + " " + a.name; }).join(", ") + (aff.length > 3 ? " und " + (aff.length - 3) + " weitere" : "");
     return {
       title: "Adresse ändern", sub: x.name + " · " + x.room, width: 640,
-      body: h`<div class="addrflow"><div><div class="t-label">Aktuell</div><div class="t-heading mono" data-testid="addr-old">${x.address}</div></div><span class="arrow" aria-hidden="true">→</span><div class="addr-new"><label class="t-label" for="ca-new">Neu</label><input id="ca-new" class="input mono" data-testid="addr-input" data-dlg="value" data-fk="addr-input" data-autofocus type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="9" value="${d.value}" aria-invalid="${String(!!v && !c.ok)}" aria-describedby="ca-check"></div></div>
+      body: h`<div class="addrflow"><div><div class="t-label">Aktuell</div><div class="t-title mono" data-testid="addr-old">${x.address}</div></div><span class="arrow" aria-hidden="true">→</span><div class="addr-new"><label class="t-label" for="ca-new">Neu</label><input id="ca-new" class="input mono" data-testid="addr-input" data-dlg="value" data-fk="addr-input" data-autofocus type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="9" value="${d.value}" aria-invalid="${String(!!v && !c.ok)}" aria-describedby="ca-check"></div></div>
         <div id="ca-check">${v ? chk(c.ok, c.msg, "addr-check") : h`<div class="t-caption" data-testid="addr-check">Format: Bereich.Linie.Teilnehmer</div>`}</div>
         <div><div class="t-label olabel">Wie wird das Gerät erkannt?</div><div class="optlist" role="radiogroup" aria-label="Erkennung">
           ${opt("ident", "answers", d.ident, "Gerät antwortet unter " + x.address, "Ohne Gang zum Gerät: die Adresse wird direkt umgeschrieben.")}
@@ -190,7 +190,7 @@
         ["Gruppenverknüpfungen", other ? (nL - map.filter(function (m) { return m.manual && !m.to; }).reduce(function (a, m) { return a + m.o.gas.length; }, 0)) + " von " + nL : nL + " von " + nL, !other || open === 0],
         ["Data Secure Schlüssel", "Das neue Gerät braucht einen FDSK (Schritt 4)", false],
       ];
-      body = h`<div class="t-label olabel">Was übernommen wird</div><div class="takeover" data-testid="takeover">${rowsT.map(function (r) { return h`<div class="trow"><span class="t-caption">${r[0]}</span><span class="wrap">${r[1]}</span><span class="${r[2] ? "tk ok" : "tk warn"}" title="${r[2] ? "übernommen" : "offen"}">${r[2] ? "✓" : "!"}<span class="sr">${r[2] ? " übernommen" : " offen"}</span></span></div>`; })}</div>
+      body = h`<div class="t-label olabel">Was übernommen wird</div><div class="takeover" data-testid="takeover">${rowsT.map(function (r) { return h`<div class="trow"><span class="t-caption">${r[0]}</span><span class="wrap">${r[1]}</span><span class="${r[2] ? "tk ok" : "tk warn"}" data-testid="takeover-mark"><span aria-hidden="true">${r[2] ? "✓" : "!"}</span>${r[2] ? "übernommen" : "offen"}</span></div>`; })}</div>
         ${other ? h`<div class="t-label olabel">Gruppenobjekte: alt → neu</div><div class="tblwrap maptbl"><table class="tbl" data-testid="map-table"><thead><tr><th>Bisher</th><th>Neues Modell</th></tr></thead><tbody>${map.map(function (m, i) {
           return h`<tr data-testid="map-row" data-manual="${String(m.manual)}"><td class="nmc" title="${m.o.name}">${m.o.name}</td><td>${m.manual ? (m.to ? h`${m.to} <button class="link-btn" data-action="mapAssign" data-idx="${i}" data-fk="map:${i}">Ändern</button>` : h`<span class="t-caption">Nicht zugeordnet</span> <button class="link-btn" data-testid="map-assign" data-action="mapAssign" data-idx="${i}" data-fk="map:${i}">Zuordnen</button>`) : h`${m.to} <span class="t-caption">· automatisch</span>`}</td></tr>`;
         })}</tbody></table></div>` : ""}`;

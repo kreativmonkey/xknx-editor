@@ -36,31 +36,26 @@
     return true;
   };
 
-  XP.dialogHtml = function () {
-    var d = XP.state.dialog;
-    if (!d || d.kind !== "saveWorkspace") return "";
-    return h`<div class="scrim modal" data-action="closeDialog"></div>
-      <div class="dialog" role="dialog" aria-modal="true" aria-label="Als Arbeitsbereich speichern" data-testid="dialog">
-        <div class="t-title">Als Arbeitsbereich speichern</div>
-        <label class="t-caption" for="ws-name">Name</label>
-        <input id="ws-name" class="input" data-testid="ws-name" type="text" maxlength="40" placeholder="z. B. Mein Büro" autocomplete="off">
-        <div class="t-caption">Speichert Sichtbarkeit und Breite der Bereiche.</div>
-        <div class="actions"><button class="btn" data-action="closeDialog">Abbrechen</button><button class="btn primary" data-testid="ws-save" data-action="confirmSaveWorkspace">Speichern</button></div>
-      </div>`;
+  XP.dialogKinds = XP.dialogKinds || {};
+  XP.dialogKinds.saveWorkspace = function (d) {
+    return {
+      title: "Als Arbeitsbereich speichern", sub: "Speichert Sichtbarkeit und Breite der Bereiche.", width: 480,
+      body: h`<div class="field"><label class="t-label" for="ws-name">Name</label><input id="ws-name" class="input block" data-testid="ws-name" data-dlg="name" data-fk="ws-name" data-autofocus type="text" maxlength="40" placeholder="z. B. Mein Büro" autocomplete="off" value="${d.name || ""}"></div>`,
+      actions: h`<button class="btn" data-action="closeDialog" data-testid="dlg-cancel">Abbrechen</button><button class="btn primary" data-testid="ws-save" data-action="confirmSaveWorkspace">Speichern</button>`,
+    };
   };
 
   XP.actions.viewMenu = function () { XP.set({ viewMenuOpen: !XP.state.viewMenuOpen, wsMenuOpen: false }); };
   XP.actions.toggleList = function () { XP.set({ hidden: Object.assign({}, XP.state.hidden, { list: !XP.state.hidden.list }), viewMenuOpen: false }); };
   XP.actions.toggleInspector = function () {
-    if (XP.formFactor() === "wide") XP.set({ hidden: Object.assign({}, XP.state.hidden, { inspector: !XP.state.hidden.inspector }), viewMenuOpen: false });
+    if (XP.formFactor() === "wide") {
+      var m = XP.state.inspByMode, k = XP.inspectorKey();
+      m[k] = !m[k];
+      XP.set({ viewMenuOpen: false });
+    }
     else XP.set({ inspectorOpen: !XP.state.inspectorOpen, viewMenuOpen: false });
   };
-  XP.actions.openSaveWorkspace = function () {
-    XP.set({ dialog: { kind: "saveWorkspace" }, viewMenuOpen: false });
-    var i = document.getElementById("ws-name");
-    if (i) i.focus();
-  };
-  XP.actions.closeDialog = function () { XP.set({ dialog: null }); };
+  XP.actions.openSaveWorkspace = function () { XP.openDialog("saveWorkspace", { name: "" }, "view-menu-btn"); };
   XP.actions.confirmSaveWorkspace = function () {
     var i = document.getElementById("ws-name");
     if (i && !XP.saveWorkspace(i.value)) i.focus();
@@ -98,42 +93,54 @@
     }, true);
   };
 
-  /* Pointer-drag splitter for the list column; the DOM is changed directly while dragging so the
-     element keeps its pointer capture, the state is written on release. */
+  /* Pointer-drag splitters for the list column and the docked inspector; the DOM is changed
+     directly while dragging so the element keeps its pointer capture, the state is written on
+     release. The inspector's splitter sits on its left edge, so dragging left widens it. */
   function listMax() { return Math.max(200, Math.min(520, innerWidth - 360)); }
-  function clampList(w) { return Math.round(Math.max(180, Math.min(listMax(), w))); }
+  function inspMax() { return Math.max(240, Math.min(480, innerWidth - 760)); }
+  var SPLIT = {
+    list: { sel: "[data-testid=list]", dir: 1, clamp: function (w) { return Math.round(Math.max(180, Math.min(listMax(), w))); } },
+    inspector: { sel: "[data-testid=inspector]", dir: -1, clamp: function (w) { return Math.round(Math.max(220, Math.min(inspMax(), w))); } },
+  };
+  XP.clampWidth = function (name, w) { return SPLIT[name].clamp(w); };
+  function setWidth(name, w) {
+    var o = {}; o[name] = w;
+    XP.set({ widths: Object.assign({}, XP.state.widths, o) });
+  }
   function bindSplitter() {
     var app = document.getElementById("app"), drag = null;
     app.addEventListener("pointerdown", function (e) {
-      var sp = e.target.closest("[data-split]");
-      if (!sp) return;
-      var list = document.querySelector("[data-testid=list]");
-      if (!list) return;
-      drag = { x: e.clientX, w: list.getBoundingClientRect().width, list: list, id: e.pointerId, el: sp };
+      var sp = e.target.closest("[data-split]"), cfg = sp && SPLIT[sp.dataset.split];
+      if (!cfg) return;
+      var panel = document.querySelector(cfg.sel);
+      if (!panel) return;
+      drag = { x: e.clientX, w: panel.getBoundingClientRect().width, panel: panel, id: e.pointerId, el: sp, cfg: cfg, name: sp.dataset.split };
       try { sp.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
       sp.classList.add("drag");
       e.preventDefault();
     });
     app.addEventListener("pointermove", function (e) {
       if (!drag || e.pointerId !== drag.id) return;
-      drag.now = clampList(drag.w + e.clientX - drag.x);
-      drag.list.style.width = drag.now + "px";
+      drag.now = drag.cfg.clamp(drag.w + drag.cfg.dir * (e.clientX - drag.x));
+      drag.panel.style.width = drag.now + "px";
     });
     function end(e) {
       if (!drag || e.pointerId !== drag.id) return;
-      var w = drag.now;
+      var w = drag.now, name = drag.name, el = drag.el;
       drag = null;
-      if (w) XP.set({ widths: Object.assign({}, XP.state.widths, { list: w }) });
-      else { var sp = document.querySelector("[data-split]"); if (sp) sp.classList.remove("drag"); }
+      el.classList.remove("drag");
+      if (w) setWidth(name, w);
     }
     app.addEventListener("pointerup", end);
     app.addEventListener("pointercancel", end);
+    /* Keyboard: the arrow moves the splitter by 16 px in its direction. */
     app.addEventListener("keydown", function (e) {
-      if (!e.target.closest("[data-split]")) return;
+      var sp = e.target.closest("[data-split]"), cfg = sp && SPLIT[sp.dataset.split];
+      if (!cfg) return;
       var d = e.key === "ArrowLeft" ? -16 : e.key === "ArrowRight" ? 16 : 0;
       if (!d) return;
       e.preventDefault();
-      XP.set({ widths: Object.assign({}, XP.state.widths, { list: clampList(XP.state.widths.list + d) }) });
+      setWidth(sp.dataset.split, cfg.clamp(XP.state.widths[sp.dataset.split] + cfg.dir * d));
     });
   }
 
@@ -146,16 +153,12 @@
       if (e.key !== "Escape" || e.defaultPrevented) return;
       var s = XP.state, p = {};
       /* the palette, flow dialogs and context menus consume Escape: one press closes one layer */
-      if (s.paletteOpen || (s.dialog && s.dialog.kind !== "saveWorkspace") || document.querySelector("[data-testid=context-menu]")) return;
-      if (s.dialog && s.dialog.kind === "saveWorkspace") { XP.set({ dialog: null }); return; }
+      if (s.paletteOpen || s.dialog || document.querySelector("[data-testid=context-menu]")) return;
       if (s.wsMenuOpen) p.wsMenuOpen = false;
       if (s.viewMenuOpen) p.viewMenuOpen = false;
       if (s.drawerOpen) p.drawerOpen = false;
       if (s.navOpen) p.navOpen = false;
       if (Object.keys(p).length) XP.set(p);
-    });
-    document.addEventListener("keydown", function (e) {
-      if (e.key === "Enter" && e.target && e.target.id === "ws-name") { e.preventDefault(); XP.actions.confirmSaveWorkspace(); }
     });
     bindSplitter();
     XP.onLongPress(document.getElementById("app"), null, "[data-row],[data-tab],[data-ctx]");

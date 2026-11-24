@@ -18,10 +18,11 @@
     if (view === "groupAddresses") return d.groupAddresses.length;
     return null;
   }
+  /* [text, kind]: status counts use the warning colours, a plain count (queue length) stays neutral */
   function badge(view) {
-    if (view === "health") return "5";
-    if (view === "commissioningDevices") return String(XP.data.devices.filter(function (x) { return x.status !== "ok"; }).length) + " offen";
-    if (view === "queue" && XP.queue) { var n = XP.state.queueItems.filter(function (i) { return i.status !== "fertig"; }).length; return n ? String(n) : null; }
+    if (view === "health") return ["5", "warn"];
+    if (view === "commissioningDevices") return [String(XP.data.devices.filter(function (x) { return x.status !== "ok"; }).length) + " offen", "warn"];
+    if (view === "queue" && XP.queue) { var n = XP.state.queueItems.filter(function (i) { return i.status !== "fertig"; }).length; return n ? [String(n), "neutral"] : null; }
     return null;
   }
 
@@ -38,12 +39,12 @@
         })}</div>` : ""}
       </div>
       <div class="ws-wrap view-wrap">
-        <button class="btn" data-testid="view-menu-btn" data-action="viewMenu" aria-haspopup="menu" aria-expanded="${s.viewMenuOpen}" title="Ansicht"><span>◫</span><span class="wl">Ansicht ▾</span></button>
+        <button class="btn" data-testid="view-menu-btn" data-fk="view-menu-btn" data-action="viewMenu" aria-haspopup="menu" aria-expanded="${s.viewMenuOpen}" title="Ansicht"><span>◫</span><span class="wl">Ansicht ▾</span></button>
         ${s.viewMenuOpen ? viewMenu() : ""}
       </div>
       <span class="spacer"></span>
       <button class="search" data-testid="search" data-fk="search" data-action="palette" title="Suche (Strg+K)"><span class="mono">⌘K</span><span class="trunc hint">Gerät, Adresse, Einstellung, Befehl…</span></button>
-      <span class="pill" data-testid="status-pill"><span class="dot ${s.connected ? "ok" : ""}"></span><span class="lbl trunc">${s.connected ? "IP-Router 1.0.0" : "Offline"}</span></span>
+      <span class="pill" data-testid="status-pill"><span class="dot ${s.connected ? "ok" : ""}"></span><span class="lbl trunc">${s.connected ? "IP-Router 1.0.0" : "Offline"}</span><span class="lbl-short" data-testid="status-word">${s.connected ? "Verbunden" : "Offline"}</span></span>
       <button class="btn" data-testid="theme-toggle" data-action="theme" title="Hell/Dunkel wechseln">${s.theme === "dark" ? "☾" : "☀"}</button>
       <button class="btn ${s.view === "settings" ? "on" : ""}" data-testid="settings" data-action="view" data-view="settings" title="Einstellungen">⚙</button>
     </div>`;
@@ -51,9 +52,10 @@
 
   function viewMenu() {
     var s = XP.state, wide = XP.formFactor() === "wide";
+    var insp = wide ? (XP.inspectorDocked ? XP.inspectorDocked() : true) : s.inspectorOpen;
     return h`<div class="menu" role="menu" data-testid="view-menu">
       <button class="btn" role="menuitemcheckbox" aria-checked="${!s.hidden.list}" data-testid="toggle-list" data-action="toggleList" ${wide ? "" : "disabled"}><span class="ico">${s.hidden.list ? "" : "✓"}</span>Liste</button>
-      <button class="btn" role="menuitemcheckbox" aria-checked="${wide ? !s.hidden.inspector : s.inspectorOpen}" data-testid="toggle-inspector" data-action="toggleInspector"><span class="ico">${(wide ? !s.hidden.inspector : s.inspectorOpen) ? "✓" : ""}</span>Inspektor</button>
+      <button class="btn" role="menuitemcheckbox" aria-checked="${insp}" data-testid="toggle-inspector" data-action="toggleInspector"><span class="ico">${insp ? "✓" : ""}</span>Inspektor</button>
       ${wide ? "" : h`<div class="t-caption menu-note">Die Liste erscheint hier als Schublade, der Inspektor als Blatt.</div>`}
       <div class="sep"></div>
       <button class="btn" role="menuitem" data-testid="save-workspace" data-action="openSaveWorkspace">Als Arbeitsbereich speichern…</button>
@@ -69,7 +71,7 @@
       return h`${exp ? h`<div class="grp t-label">${g.group}</div>` : ""}${g.items.map(function (id) {
         var v = XP.VIEWS[id] || { label: id, icon: "?" };
         var c = count(id), b = badge(id);
-        return h`<button class="item ${s.view === id ? "sel" : ""}" data-action="view" data-view="${id}" data-label="${v.label}" title="${v.label}"><span class="ico">${v.icon}</span><span class="lbl trunc">${v.label}</span>${b ? h`<span class="badge warn">${b}</span>` : c !== null ? h`<span class="count">${c}</span>` : ""}</button>`;
+        return h`<button class="item ${s.view === id ? "sel" : ""}" data-action="view" data-view="${id}" data-label="${v.label}" title="${v.label}"><span class="ico">${v.icon}</span><span class="lbl trunc">${v.label}</span>${b ? h`<span class="badge ${b[1]}" data-testid="rail-badge">${b[0]}</span>` : c !== null ? h`<span class="count">${c}</span>` : ""}</button>`;
       })}`;
     });
     if (narrow) return h`<div class="scrim nav-scrim" data-action="closeNav"></div><nav class="rail expanded navdrawer" data-testid="nav-drawer" aria-label="Ansichten">${groups}</nav>`;
@@ -82,7 +84,7 @@
     var inner = v && v.list ? v.list(s) : h`<div class="placeholder t-caption">${v ? v.label : s.view}: Liste folgt.</div>`;
     if (f === "wide") {
       if (s.hidden.list) return "";
-      return h`<aside class="list" data-testid="list" data-scroll="list" style="width:${s.widths.list}px">${inner}</aside><div class="split" data-split data-fk="split" data-testid="splitter-list" role="separator" aria-orientation="vertical" aria-label="Breite der Liste" tabindex="0"></div>`;
+      return h`<aside class="list" data-testid="list" data-scroll="list" style="width:${s.widths.list}px">${inner}</aside><div class="split" data-split="list" data-fk="split" data-testid="splitter-list" role="separator" aria-orientation="vertical" aria-label="Breite der Liste" tabindex="0"></div>`;
     }
     if (f === "tablet") {
       if (!s.drawerOpen) return "";

@@ -104,7 +104,7 @@
         ? h`<div class="banner warn" data-testid="mon-offline" role="status"><span aria-hidden="true">!</span><span class="wrap">Keine Verbindung zum Bus. Es kommen keine neuen Telegramme, Lesen und Schreiben sind gesperrt.</span><button class="btn bordered" data-testid="mon-connect" data-fk="mon-connect" data-action="monConnect">Verbinden</button></div>`
         : S.monPaused ? h`<div class="banner" data-testid="mon-paused" role="status"><span aria-hidden="true">Ⅱ</span><span class="wrap">Pausiert. Neue Telegramme werden nicht angezeigt, Lesen und Schreiben sind gesperrt.</span></div>` : "";
       return h`<div class="mon" data-testid="monitor-page">
-        <div class="pbar"><span class="t-heading">Gruppenmonitor</span><span class="spacer"></span><span class="t-caption" data-testid="mon-count">${S.monitor.length} Telegramme</span>
+        <div class="pbar"><span class="t-caption" data-testid="mon-state">${!S.connected ? "Offline" : S.monPaused ? "Pausiert" : "Live"}</span><span class="t-caption" data-testid="mon-count">${S.monitor.length} Telegramme</span><span class="spacer"></span>
           <button class="btn bordered ${S.monPaused ? "on" : ""}" data-testid="mon-pause" data-fk="mon-pause" data-action="monPause" aria-pressed="${String(S.monPaused)}">${S.monPaused ? "Fortsetzen" : "Pause"}</button>
           <button class="btn bordered" data-testid="mon-clear" data-action="monClear">Leeren</button></div>
         ${banner}${cmdbar()}
@@ -139,7 +139,7 @@
     label: "Projektinfo", icon: "ⓘ", noList: true,
     page: function () {
       var d = XP.data, open = d.devices.filter(function (x) { return x.status !== "ok"; }).length;
-      return h`<div class="rpage" data-testid="project-info" data-scroll="info"><div class="pbar"><span class="t-heading">Projektinfo</span></div>
+      return h`<div class="rpage" data-testid="project-info" data-scroll="info">
         <div class="rbody"><div class="t-label">Projekt</div>${facts([
           ["Name", d.project.name], ["Linien", d.project.lines.map(function (l) { return l.id + " " + l.name; }).join(", ")],
           ["Geräte", String(d.devices.length)], ["Gruppenadressen", String(d.groupAddresses.length)],
@@ -159,7 +159,7 @@
         ["Gruppenadressen (CSV)", "Für Visualisierungen und Tabellenkalkulation.", "12.11.2026"],
         ["Home-Assistant-Konfiguration", "Entitäten für die KNX-Integration aus den Gruppenadressen.", "Nie exportiert"],
       ];
-      return h`<div class="rpage" data-testid="export-page" data-scroll="exp"><div class="pbar"><span class="t-heading">Export &amp; Signatur</span></div>
+      return h`<div class="rpage" data-testid="export-page" data-scroll="exp">
         <div class="rbody"><div class="t-caption">Die Exportformate und der Stand der Signatur. Das Exportieren selbst folgt im Editor.</div>
         <div class="tblwrap"><table class="tbl" data-testid="export-table"><thead><tr><th>Format</th><th>Beschreibung</th><th>Zuletzt</th></tr></thead><tbody>${rows.map(function (r) {
           return h`<tr><td class="nmc" title="${r[0]}">${r[0]}</td><td class="nmc" title="${r[1]}">${r[1]}</td><td class="typ">${r[2]}</td></tr>`;
@@ -232,7 +232,7 @@
   XP.VIEWS.settings = {
     label: "Einstellungen", icon: "⚙", noList: true,
     page: function () {
-      return h`<div class="spage" data-testid="settings-page"><div class="pbar sbar"><span class="t-heading">Einstellungen</span><span class="spacer"></span><input class="input sfilter" type="search" data-testid="settings-search" data-fk="settings-search" placeholder="Einstellungen durchsuchen…" aria-label="Einstellungen durchsuchen" autocomplete="off" value="${S.setQuery}"></div><div class="sbody" data-scroll="settings" data-testid="settings-body">${settingsBody()}</div></div>`;
+      return h`<div class="spage" data-testid="settings-page" data-density="comfortable"><div class="pbar sbar"><input class="input sfilter" type="search" data-testid="settings-search" data-fk="settings-search" placeholder="Einstellungen durchsuchen…" aria-label="Einstellungen durchsuchen" autocomplete="off" value="${S.setQuery}"></div><div class="sbody" data-scroll="settings" data-testid="settings-body">${settingsBody()}</div></div>`;
     },
   };
   /* Jump to a setting: show the page without a filter, scroll to the row and highlight it. */

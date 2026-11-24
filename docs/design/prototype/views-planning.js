@@ -10,6 +10,9 @@
   S.goSel = {};         /* per device: { ids, anchor } */
   S.gaOpen = {};        /* group id -> boolean (default open) */
   S.inspectorOpen = false;
+  /* docked inspector per editor mode, for this session: closed with parameters, open with objects */
+  S.inspByMode = { params: false, objects: true, ga: true };
+  S.goSelectMode = null;  /* device address in touch multi-select: a tap toggles rows until "Fertig" */
   S.listFilter = "";
 
   var DPT = {
@@ -20,7 +23,12 @@
   function dptName(id) { return DPT[id] || id; }
   function dev(a) { return XP.data.devices.filter(function (d) { return d.address === a; })[0]; }
   function gaOf(a) { return XP.data.groupAddresses.filter(function (g) { return g.address === a; })[0]; }
-  function statusDot(st) { return st === "ok" ? "ok" : st === "error" ? "err" : st === "new" ? "" : "warn"; }
+  function statusBadge(st) {
+    var k = st === "ok" ? "ok" : st === "error" ? "err" : st === "new" ? "info" : "warn";
+    return h`<span class="sb ${k}" data-testid="device-status">${XP.data.statusLabels[st]}</span>`;
+  }
+  /* "1 Objekt ausgewählt" / "3 Objekte ausgewählt" */
+  function selectedText(n) { return n + (n === 1 ? " Objekt" : " Objekte") + " ausgewählt"; }
   function flagSet(str) {
     var s = String(str).replace(/T/g, "Ü");
     return FLAGS.map(function (f) { return s.indexOf(f[0]) >= 0; });
@@ -63,6 +71,12 @@
     d.channels.forEach(function (c) { c.params.forEach(function (p) { if (p.changed) n++; }); });
     return n;
   }
+  /* Which docked-inspector flag applies to the active editor (wide layout). */
+  XP.inspectorKey = function () {
+    var t = activeTab(), d = t && t.kind === "device" && dev(t.ref);
+    return d ? est(d).mode : "ga";
+  };
+  XP.inspectorDocked = function () { return !!S.inspByMode[XP.inspectorKey()]; };
   XP.planning = {
     mode: function (addr, mode) { var d = dev(addr); est(d).mode = mode; XP.set({}); },
     select: function (addr, ids) { var g = gsel(dev(addr)); g.ids = ids.slice(); g.anchor = ids[0] || null; XP.set({}); },
@@ -81,7 +95,7 @@
       if (!inLine.length) return "";
       return h`<div class="grp t-label">${ln.name} · ${ln.id}</div>${inLine.map(function (x) {
         var on = sel === x.address, tab = (sel ? on : x.address === first) ? 0 : -1;
-        return h`<div class="row ${on ? "sel" : ""}" role="option" aria-selected="${String(on)}" tabindex="${tab}" data-row="${x.address}" data-kind="device" data-fk="row:${x.address}" title="${x.address} ${x.name} · ${d.statusLabels[x.status]}"><span class="dot ${statusDot(x.status)}"></span><span class="addr mono">${x.address}</span><span class="nm trunc">${x.name}</span></div>`;
+        return h`<div class="row ${on ? "sel" : ""}" role="option" aria-selected="${String(on)}" tabindex="${tab}" data-row="${x.address}" data-kind="device" data-fk="row:${x.address}" title="${x.address} ${x.name}"><span class="addr mono">${x.address}</span><span class="nm trunc">${x.name}</span></div>`;
       })}`;
     })}`;
   }
@@ -137,13 +151,17 @@
     var set = flagSet(str);
     return h`${FLAGS.map(function (f, i) { return set[i] ? h`<b title="${f[1]}">${f[0]}</b>` : h`<i title="${f[1]}">${f[0]}</i>`; })}`;
   }
+  function gaChip(a, send) {
+    return send ? h`<span class="chip send" data-send><span class="cue" aria-hidden="true">→</span>${a}<span class="sr"> (sendend)</span></span>` : h`<span class="chip">${a}</span>`;
+  }
   function objectsBody(d) {
-    var g = gsel(d), first = d.groupObjects[0] && d.groupObjects[0].id;
+    var g = gsel(d), first = d.groupObjects[0] && d.groupObjects[0].id, sm = S.goSelectMode === d.address;
+    var bar = sm ? h`<div class="selbar" data-testid="select-bar" role="status"><span data-testid="select-count">${selectedText(g.ids.length)}</span><span class="spacer"></span><button class="btn bordered" data-testid="select-done" data-action="selectDone">Fertig</button></div>` : "";
     var tabIdx = function (id) { return (g.ids.length ? g.ids.indexOf(id) === 0 : id === first) ? 0 : -1; };
-    return h`<div class="tblwrap" data-scroll="tbl"><table class="tbl" data-testid="go-table"><thead><tr><th class="num">#</th><th>Name</th><th>Typ</th><th>Flags</th><th>Adressen</th></tr></thead><tbody>${d.groupObjects.map(function (o) {
+    return h`${bar}<div class="tblwrap" data-scroll="tbl"><table class="tbl ${sm ? "selmode" : ""}" data-testid="go-table"><thead><tr>${sm ? h`<th class="ck"><span class="sr">Ausgewählt</span></th>` : ""}<th class="num">#</th><th>Name</th><th class="col-typ">Typ</th><th>Flags</th><th>Adressen</th></tr></thead><tbody>${d.groupObjects.map(function (o) {
       var on = g.ids.indexOf(o.id) >= 0;
-      return h`<tr class="${on ? "sel" : ""}" data-row="${o.id}" data-kind="go" data-fk="go:${o.id}" tabindex="${tabIdx(o.id)}" aria-selected="${String(on)}"><td class="num">${o.num}</td><td class="nmc" title="${o.name}">${o.name}</td><td class="typ">${dptName(o.dpt)}</td><td class="flags">${flagsHtml(o.flags)}</td><td>${o.gas.length ? o.gas.map(function (a, i) { return h`<span class="chip ${i === 0 ? "send" : ""}" title="${i === 0 ? "Sendend" : "Empfangend"}">${a}</span>`; }) : h`<span class="t-caption dis">nicht verknüpft</span>`}</td></tr>`;
-    })}</tbody></table>${d.groupObjects.length ? "" : h`<div class="empty">Dieses Gerät hat keine Gruppenobjekte.</div>`}</div>`;
+      return h`<tr class="${on ? "sel" : ""}" data-row="${o.id}" data-kind="go" data-fk="go:${o.id}" tabindex="${tabIdx(o.id)}" aria-selected="${String(on)}">${sm ? h`<td class="ck" aria-hidden="true">${on ? "✓" : ""}</td>` : ""}<td class="num">${o.num}</td><td class="nmc" title="${o.name}">${o.name}</td><td class="typ col-typ">${dptName(o.dpt)}</td><td class="flags">${flagsHtml(o.flags)}</td><td>${o.gas.length ? o.gas.map(function (a, i) { return gaChip(a, i === 0); }) : h`<span class="t-caption dis">nicht verknüpft</span>`}</td></tr>`;
+    })}</tbody></table>${d.groupObjects.length ? h`<div class="t-caption legend" data-testid="go-legend"><span class="cue">→</span> sendende Gruppenadresse · Flags: K Kommunikation, L Lesen, S Schreiben, Ü Übertragen, A Aktualisieren (fett = gesetzt)</div>` : h`<div class="empty">Dieses Gerät hat keine Gruppenobjekte.</div>`}</div>`;
   }
 
   /* ---------- inspector ---------- */
@@ -153,18 +171,16 @@
       return h`<option value="${k}" ${!mixed && values[0] === k ? "selected" : ""}>${k} ${DPT[k]}</option>`;
     })}</select>`;
   }
-  function deviceFacts(d) {
-    return h`<div class="facts"><span class="t-caption">Adresse</span><span class="mono">${d.address}</span><span class="t-caption">Hersteller</span><span class="wrap">${d.manufacturer}</span><span class="t-caption">Produkt</span><span class="wrap">${d.product}</span><span class="t-caption">Raum</span><span class="wrap">${d.room}</span><span class="t-caption">Status</span><span class="wrap"><span class="dot ${statusDot(d.status)}"></span> ${XP.data.statusLabels[d.status]}</span><span class="t-caption">Beschreibung</span><span class="wrap">${d.description || "–"}</span></div>`;
-  }
   function deviceInspector(d) {
     var e = est(d), sel = e.mode === "objects" ? selObjects(d) : [];
     if (!sel.length) {
-      return h`<div class="insp-body" data-scroll="insp"><div class="ih"><div class="t-title wrap" data-testid="inspector-title">${d.name}</div><div class="t-caption wrap">${d.manufacturer} ${d.product}</div></div>${deviceFacts(d)}<div class="irow"><button class="btn bordered" data-action="rename" data-type="device" data-ref="${d.address}">Umbenennen… (F2)</button></div>${e.mode === "objects" ? h`<div class="t-caption hintbox">Wähle Gruppenobjekte in der Liste (Strg-Klick oder Umschalt-Klick für mehrere), um sie hier zu bearbeiten.</div>` : ""}</div>`;
+      /* name, address, product and room are in the editor header; the inspector adds only the rest */
+      return h`<div class="insp-body" data-scroll="insp">${e.mode === "objects" ? h`<div class="t-caption" data-testid="inspector-hint">Wähle Gruppenobjekte in der Liste (Strg- oder Umschalt-Klick für mehrere, auf Touch: lange drücken und „Auswählen“), um sie hier zu bearbeiten.</div>` : ""}<div class="t-label ilabel">Beschreibung</div><div class="wrap ${d.description ? "" : "t-caption"}">${d.description || "Keine Beschreibung"}</div><div class="irow"><button class="btn bordered" data-action="rename" data-type="device" data-ref="${d.address}">Umbenennen… (F2)</button></div></div>`;
     }
     var one = sel.length === 1, o = sel[0];
     var sets = sel.map(function (x) { return flagSet(x.flags); });
-    var union = [];
-    sel.forEach(function (x) { x.gas.forEach(function (a) { if (union.indexOf(a) < 0) union.push(a); }); });
+    var union = [], sending = [];
+    sel.forEach(function (x) { x.gas.forEach(function (a, i) { if (union.indexOf(a) < 0) union.push(a); if (i === 0 && sending.indexOf(a) < 0) sending.push(a); }); });
     return h`<div class="insp-body" data-scroll="insp"><div class="ih"><div class="t-title wrap" data-testid="inspector-title">${one ? o.name : sel.length + " Objekte"}</div><div class="t-caption wrap">${one ? "Objekt " + o.num + " · " + dptName(o.dpt) : "Änderungen gelten für alle gewählten Objekte"}</div></div>
       <div class="t-label ilabel">Datentyp</div>${dptSelect(sel.map(function (x) { return x.dpt; }), 'data-insp="dpt"', "insp-dpt")}
       <div class="t-label ilabel">Flags</div><div class="tog">${FLAGS.map(function (f, i) {
@@ -173,23 +189,24 @@
       })}</div>
       <div class="t-label ilabel">Gruppenadressen</div><div class="chiplist">${union.length ? union.map(function (a) {
         var g = gaOf(a);
-        return h`<span class="chip big"><span class="trunc">${a}${g ? " " + g.name : ""}</span><button class="x" data-action="unlink" data-addr="${a}" aria-label="Verknüpfung mit ${a} lösen" title="Verknüpfung lösen">✕</button></span>`;
-      }) : h`<span class="t-caption dis">nicht verknüpft</span>`}</div>
+        var snd = sending.indexOf(a) >= 0;
+        return h`<span class="chip big ${snd ? "send" : ""}">${snd ? h`<span class="cue" aria-hidden="true">→</span>` : ""}<span class="trunc">${a}${g ? " " + g.name : ""}${snd ? h`<span class="sr"> (sendend)</span>` : ""}</span><button class="x" data-action="unlink" data-addr="${a}" aria-label="Verknüpfung mit ${a} lösen" title="Verknüpfung lösen">✕</button></span>`;
+      }) : h`<span class="t-caption dis">nicht verknüpft</span>`}</div>${sending.length ? h`<div class="t-caption"><span class="cue">→</span> sendet (erste Adresse eines Objekts), die anderen empfangen nur.</div>` : ""}
       <div class="irow"><button class="btn bordered" data-testid="insp-link" data-action="openLink">+ Verknüpfen…</button>${one ? h`<button class="btn bordered" data-action="rename" data-type="go" data-ref="${o.id}">Umbenennen… (F2)</button>` : ""}</div></div>`;
   }
   function gaInspector(g) {
-    return h`<div class="insp-body" data-scroll="insp"><div class="ih"><div class="t-title wrap" data-testid="inspector-title">${g.name}</div><div class="t-caption wrap mono">${g.address}</div></div><div class="t-label ilabel">Datentyp</div>${dptSelect([g.dpt], 'data-insp="gadpt"', "insp-dpt")}<div class="irow"><button class="btn bordered" data-action="rename" data-type="ga" data-ref="${g.address}">Umbenennen… (F2)</button></div></div>`;
+    return h`<div class="insp-body" data-scroll="insp"><div class="t-label ilabel">Datentyp</div>${dptSelect([g.dpt], 'data-insp="gadpt"', "insp-dpt")}<div class="irow"><button class="btn bordered" data-action="rename" data-type="ga" data-ref="${g.address}">Umbenennen… (F2)</button></div></div>`;
   }
 
   /* Docked on the right (wide) or a sheet (tablet: bottom sheet, narrow: full screen). */
   function frame(head, body, insp) {
     var f = XP.formFactor(), wide = f === "wide";
-    var docked = wide && !S.hidden.inspector, sheet = !wide && S.inspectorOpen;
-    return h`<div class="dev ${sheet ? "has-sheet" : ""}">${head}<div class="dev-body">${body}${docked ? h`<aside class="inspector" data-testid="inspector" aria-label="Inspektor">${insp}</aside>` : ""}</div>${sheet ? h`<div class="scrim sheet-scrim" data-action="closeInspector"></div><aside class="inspector sheet" data-testid="inspector" role="dialog" aria-label="Inspektor"><div class="insp-bar"><button class="btn bordered" data-testid="inspector-close" data-action="closeInspector">${f === "narrow" ? "‹ Zurück" : "Schließen ✕"}</button></div>${insp}</aside>` : ""}</div>`;
+    var docked = wide && XP.inspectorDocked(), sheet = !wide && S.inspectorOpen;
+    return h`<div class="dev ${sheet ? "has-sheet" : ""}">${head}<div class="dev-body">${body}${docked ? h`<div class="split" data-split="inspector" data-fk="split-inspector" data-testid="splitter-inspector" role="separator" aria-orientation="vertical" aria-label="Breite des Inspektors" tabindex="0"></div><aside class="inspector" data-testid="inspector" aria-label="Inspektor" style="width:${XP.clampWidth("inspector", S.widths.inspector)}px">${insp}</aside>` : ""}</div>${sheet ? h`<div class="scrim sheet-scrim" data-action="closeInspector"></div><aside class="inspector sheet" data-testid="inspector" role="dialog" aria-label="Inspektor"><div class="insp-bar"><button class="btn bordered" data-testid="inspector-close" data-action="closeInspector">${f === "narrow" ? "‹ Zurück" : "Schließen ✕"}</button></div>${insp}</aside>` : ""}</div>`;
   }
   function inspectorButton(count) {
     var f = XP.formFactor();
-    var on = f === "wide" ? !S.hidden.inspector : S.inspectorOpen;
+    var on = f === "wide" ? XP.inspectorDocked() : S.inspectorOpen;
     return h`<button class="btn bordered ${on ? "on" : ""}" data-testid="inspector-button" data-action="toggleInspector" aria-pressed="${String(on)}">Inspektor${count ? " (" + count + ")" : ""}</button>`;
   }
 
@@ -201,7 +218,7 @@
       var d = dev(tab.ref);
       if (!d) return h`<div class="empty">Gerät nicht gefunden.</div>`;
       var e = est(d), objs = e.mode === "objects";
-      var head = h`<div class="dev-head"><div class="dh-t"><div class="t-heading wrap" data-testid="device-title">${d.name}</div><div class="t-caption wrap">${d.address} · ${d.manufacturer} ${d.product} · ${d.room}</div></div><span class="spacer"></span><div class="seg" data-testid="mode-toggle" role="group" aria-label="Ansicht"><button class="${objs ? "" : "on"}" data-testid="mode-params" data-action="mode" data-mode="params" aria-pressed="${String(!objs)}">Parameter</button><button class="${objs ? "on" : ""}" data-testid="mode-objects" data-action="mode" data-mode="objects" aria-pressed="${String(objs)}">Gruppenobjekte</button></div>${inspectorButton(objs ? gsel(d).ids.length : 0)}</div>`;
+      var head = h`<div class="dev-head"><div class="dh-t"><div class="dh-tr"><div class="t-title wrap" data-testid="device-title">${d.name}</div>${statusBadge(d.status)}</div><div class="t-caption wrap">${d.address} · ${d.manufacturer} ${d.product} · ${d.room}</div></div><span class="spacer"></span><div class="seg" data-testid="mode-toggle" role="group" aria-label="Ansicht"><button class="${objs ? "" : "on"}" data-testid="mode-params" data-action="mode" data-mode="params" aria-pressed="${String(!objs)}">Parameter</button><button class="${objs ? "on" : ""}" data-testid="mode-objects" data-action="mode" data-mode="objects" aria-pressed="${String(objs)}">Gruppenobjekte</button></div>${inspectorButton(objs ? gsel(d).ids.length : 0)}</div>`;
       return frame(head, h`<div class="dev-main">${objs ? objectsBody(d) : paramsBody(d, e)}</div>`, deviceInspector(d));
     },
   };
@@ -224,7 +241,7 @@
         var co = open(c.id), items = d.groupAddresses.filter(function (g) { return g.group === c.id; });
         return h`<button class="grow lvl-mid" data-level="mid" data-group="${c.id}" data-action="toggleGroup" data-fk="g:${c.id}" aria-expanded="${String(co)}" title="${c.id} ${c.name}"><span class="chev">${co ? "▾" : "▸"}</span><span class="addr mono">${c.id}</span><span class="nm trunc">${c.name}</span><span class="count">${items.length}</span></button>${co ? items.map(function (g) {
           var on = sel === g.address, tab = (sel ? on : g.address === first) ? 0 : -1, nl = linksOf(g.address).length;
-          return h`<div class="row ga ${on ? "sel" : ""}" role="treeitem" aria-selected="${String(on)}" tabindex="${tab}" data-row="${g.address}" data-kind="groupAddress" data-fk="row:${g.address}" title="${g.address} ${g.name} · ${nl} verknüpft"><span class="addr mono">${g.address}</span><span class="nm trunc">${g.name}</span>${nl ? "" : h`<span class="dot" title="Nicht verknüpft"></span>`}</div>`;
+          return h`<div class="row ga ${on ? "sel" : ""}" role="treeitem" aria-selected="${String(on)}" tabindex="${tab}" data-row="${g.address}" data-kind="groupAddress" data-fk="row:${g.address}" title="${g.address} ${g.name} · ${nl} verknüpft"><span class="addr mono">${g.address}</span><span class="nm trunc">${g.name}</span>${nl ? "" : h`<span class="sb" data-testid="ga-unlinked">nicht verknüpft</span>`}</div>`;
         }) : ""}`;
       }) : ""}`;
     })}</div>`;
@@ -237,7 +254,7 @@
       var g = gaOf(tab.ref);
       if (!g) return h`<div class="empty">Gruppenadresse nicht gefunden.</div>`;
       var links = linksOf(g.address);
-      var head = h`<div class="dev-head"><div class="dh-t"><div class="t-heading wrap" data-testid="ga-title">${g.name}</div><div class="t-caption wrap"><span class="mono">${g.address}</span> · ${g.dpt} ${dptName(g.dpt)}</div></div><span class="spacer"></span>${inspectorButton(0)}</div>`;
+      var head = h`<div class="dev-head"><div class="dh-t"><div class="t-title wrap" data-testid="ga-title">${g.name}</div><div class="t-caption wrap"><span class="mono">${g.address}</span> · ${g.dpt} ${dptName(g.dpt)}</div></div><span class="spacer"></span>${inspectorButton(0)}</div>`;
       var body = h`<div class="dev-main"><div class="pbar"><span class="sec">Verknüpfte Gruppenobjekte (${links.length})</span></div><div class="tblwrap" data-scroll="tbl">${links.length ? h`<table class="tbl" data-testid="ga-links"><thead><tr><th>Gerät</th><th>Objekt</th><th class="col-typ">Typ</th><th>Flags</th></tr></thead><tbody>${links.map(function (l) {
         return h`<tr><td class="nmc"><button class="link-btn" data-action="gotoGo" data-dev="${l.d.address}" data-go="${l.o.id}" title="${l.d.address} ${l.d.name}"><span class="mono">${l.d.address}</span> ${l.d.name}</button></td><td class="nmc" title="${l.o.name}">${l.o.name}</td><td class="col-typ">${dptName(l.o.dpt)}</td><td class="flags">${flagsHtml(l.o.flags)}</td></tr>`;
       })}</tbody></table>` : h`<div class="empty" data-testid="ga-links"><div class="t-title">Nicht verknüpft</div><div>Diese Gruppenadresse ist mit keinem Gruppenobjekt verbunden.</div></div>`}</div></div>`;
@@ -302,6 +319,7 @@
       if (g.ids.indexOf(ref) < 0) { g.ids = [ref]; g.anchor = ref; XP.set({}); }
       var sel = selObjects(d), one = sel.length === 1, a0 = sel[0] && sel[0].gas[0];
       return [
+        { label: "Auswählen", disabled: S.goSelectMode === d.address, run: function () { XP.set({ goSelectMode: d.address }); } },
         { label: "Verknüpfen…", run: function () { openLink(); } },
         { label: "Kopieren", run: function () { copyText(sel.map(function (o) { return o.name; }).join("\n")); } },
         { label: "Gehe zu Adresse", disabled: !one || !a0, run: function () { XP.openObject("groupAddress", a0, { pin: false }); } },
@@ -329,9 +347,7 @@
     return o ? o.name : "";
   }
   function openRename(type, ref) {
-    XP.set({ dialog: { kind: "rename", type: type, ref: ref, value: currentName(type, ref) }, viewMenuOpen: false });
-    var i = document.getElementById("rn-name");
-    if (i) { i.focus(); i.select(); }
+    XP.openDialog("rename", { type: type, ref: ref, value: currentName(type, ref) });
   }
   function applyRename(v) {
     var d = S.dialog, name = String(v || "").trim();
@@ -350,9 +366,7 @@
   function openLink() {
     var d = curDev();
     if (!d || !selObjects(d).length) return;
-    XP.set({ dialog: { kind: "link" } });
-    var i = document.getElementById("lk-ga");
-    if (i) i.focus();
+    XP.openDialog("link", {});
   }
   function applyLink(addr) {
     var d = curDev();
@@ -362,30 +376,24 @@
     XP.set({ dialog: null });
     return true;
   }
-  var prevDialog = XP.dialogHtml;
-  XP.dialogHtml = function () {
-    var d = S.dialog;
-    if (d && d.kind === "rename") {
-      return h`<div class="scrim modal" data-action="closeDialog"></div>
-        <div class="dialog" role="dialog" aria-modal="true" aria-label="Umbenennen" data-testid="dialog">
-          <div class="t-title">Umbenennen</div>
-          <label class="t-caption" for="rn-name">Name</label>
-          <input id="rn-name" class="input" data-testid="rename-input" type="text" maxlength="80" autocomplete="off" value="${d.value}">
-          <div class="actions"><button class="btn" data-action="closeDialog">Abbrechen</button><button class="btn primary" data-testid="rename-confirm" data-action="confirmRename">Umbenennen</button></div>
-        </div>`;
-    }
-    if (d && d.kind === "link") {
-      var dv = curDev(), sel = dv ? selObjects(dv) : [];
-      var free = XP.data.groupAddresses.filter(function (g) { return sel.some(function (o) { return o.gas.indexOf(g.address) < 0; }); });
-      return h`<div class="scrim modal" data-action="closeDialog"></div>
-        <div class="dialog" role="dialog" aria-modal="true" aria-label="Verknüpfen" data-testid="dialog">
-          <div class="t-title">Mit Gruppenadresse verknüpfen</div>
-          <label class="t-caption" for="lk-ga">Gruppenadresse</label>
-          <select id="lk-ga" class="ctl block" data-testid="link-ga">${free.map(function (g) { return h`<option value="${g.address}">${g.address} ${g.name}</option>`; })}</select>
-          <div class="actions"><button class="btn" data-action="closeDialog">Abbrechen</button><button class="btn primary" data-testid="link-confirm" data-action="confirmLink">Verknüpfen</button></div>
-        </div>`;
-    }
-    return prevDialog ? prevDialog() : "";
+  /* Both use the shared dialog frame of dialogs.js (480 wide, comfortable, title heading). */
+  XP.dialogKinds = XP.dialogKinds || {};
+  XP.dialogKinds.rename = function (d) {
+    return {
+      title: "Umbenennen", width: 480,
+      body: h`<div class="field"><label class="t-label" for="rn-name">Name</label><input id="rn-name" class="input block" data-testid="rename-input" data-dlg="value" data-fk="rn-name" data-autofocus type="text" maxlength="80" autocomplete="off" value="${d.value}"></div>`,
+      actions: h`<button class="btn" data-action="closeDialog" data-testid="dlg-cancel">Abbrechen</button><button class="btn primary" data-testid="rename-confirm" data-action="confirmRename">Umbenennen</button>`,
+    };
+  };
+  XP.dialogKinds.link = function () {
+    var dv = curDev(), sel = dv ? selObjects(dv) : [];
+    var free = XP.data.groupAddresses.filter(function (g) { return sel.some(function (o) { return o.gas.indexOf(g.address) < 0; }); });
+    return {
+      title: "Mit Gruppenadresse verknüpfen", width: 480,
+      sub: sel.length === 1 ? sel[0].name : sel.length + " Objekte",
+      body: h`<div class="field"><label class="t-label" for="lk-ga">Gruppenadresse</label><select id="lk-ga" class="ctl block" data-testid="link-ga" data-fk="lk-ga" data-autofocus>${free.map(function (g) { return h`<option value="${g.address}">${g.address} ${g.name}</option>`; })}</select></div>`,
+      actions: h`<button class="btn" data-action="closeDialog" data-testid="dlg-cancel">Abbrechen</button><button class="btn primary" data-testid="link-confirm" data-action="confirmLink">Verknüpfen</button>`,
+    };
   };
 
   /* ---------- actions ---------- */
@@ -406,6 +414,7 @@
   };
   A.toggleGroup = function (el) { var id = el.dataset.group; S.gaOpen[id] = S.gaOpen[id] === false; XP.set({}); };
   A.closeInspector = function () { XP.set({ inspectorOpen: false }); };
+  A.selectDone = function () { XP.set({ goSelectMode: null }); };
   A.rename = function (el) { openRename(el.dataset.type, el.dataset.ref); };
   A.confirmRename = function () {
     var i = document.getElementById("rn-name");
@@ -457,9 +466,11 @@
       var tr = e.target.closest("tr[data-kind=go]");
       if (!tr) return;
       var d = curDev();
-      if (d) selectGo(d, tr.dataset.row, e.shiftKey ? "range" : (e.ctrlKey || e.metaKey) ? "toggle" : "single");
+      if (d) selectGo(d, tr.dataset.row, S.goSelectMode === d.address ? "toggle" : e.shiftKey ? "range" : (e.ctrlKey || e.metaKey) ? "toggle" : "single");
     });
     app.addEventListener("dblclick", function (e) {
+      var d = curDev();
+      if (d && S.goSelectMode === d.address) return;
       if (e.target.closest("tr[data-kind=go]") && XP.formFactor() !== "wide") XP.set({ inspectorOpen: true });
     });
 
@@ -553,13 +564,11 @@
       if (again) { again.focus(); again.scrollIntoView({ block: "nearest" }); }
     });
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Enter" && e.target && e.target.id === "rn-name") { e.preventDefault(); XP.actions.confirmRename(); return; }
       if (e.key === "Escape") {
         if (menuEl) { XP.closeContextMenu(); e.stopPropagation(); return; }
-        var dk = S.dialog && S.dialog.kind;
-        if (dk === "rename" || dk === "link") { XP.set({ dialog: null }); e.stopPropagation(); return; }
         if (S.paletteOpen || S.dialog) return;
-        if (S.inspectorOpen) { XP.set({ inspectorOpen: false }); e.stopPropagation(); }
+        if (S.inspectorOpen) { XP.set({ inspectorOpen: false }); e.stopPropagation(); return; }
+        if (S.goSelectMode) { XP.set({ goSelectMode: null }); e.stopPropagation(); }
         return;
       }
       if (e.key !== "F2" || S.dialog) return;

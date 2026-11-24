@@ -1,12 +1,13 @@
 """Smoke tests and screenshots for the clickable prototype.
 
-Run: uv run --with playwright python docs/design/prototype/smoke_test.py --out /tmp/xp-shots
+Run: uv run --with playwright==1.64.0 python docs/design/prototype/smoke_test.py --out /tmp/xp-shots
 
 Extending (later tasks):
   - add a test:        @test  def test_x(ctx): ...   (ctx.page(), ctx.url(...))
   - add a screenshot:  SCREENSHOT_VIEWS.append(("name", lambda page: page.evaluate("...")))
     The step runs after the page loaded (with ?fast=1) and before the shot.
-Any failed test or console error makes the script exit non-zero.
+Any failed test, console error or network request (every http(s) request is blocked and
+recorded: the prototype must run without network) makes the script exit non-zero.
 """
 import argparse
 import os
@@ -53,12 +54,23 @@ class Ctx:
   def __init__(self, browser):
     self.browser = browser
     self.errors = []
+    self.requests = []
+
+  def new_context(self, **kw):
+    """A browser context whose http(s) requests are blocked and recorded."""
+    context = self.browser.new_context(**kw)
+
+    def block(route):
+      self.requests.append(route.request.url)
+      route.abort()
+    context.route("http*://**", block)
+    return context
 
   def url(self, query="fast=1"):
     return INDEX + ("?" + query if query else "")
 
   def page(self, width=1280, height=800, init_script=None, query="fast=1"):
-    context = self.browser.new_context(viewport={"width": width, "height": height})
+    context = self.new_context(viewport={"width": width, "height": height})
     if init_script:
       context.add_init_script(init_script)
     page = context.new_page()
@@ -321,7 +333,7 @@ def test_save_workspace(ctx):
   assert page.locator("[data-testid=dialog]").count() == 0
   assert "Mein Büro" in page.locator("[data-testid=ws-switcher]").inner_text()
   # change layout, then restore through the switcher
-  page.evaluate("XP.set({hidden: {list: false, inspector: false}, widths: {list: 240, inspector: 300}})")
+  page.evaluate("XP.set({hidden: {list: false}, widths: {list: 240, inspector: 300}})")
   page.click("[data-testid=ws-switcher]")
   page.click("[data-testid=ws-menu] >> text=Planen")
   page.click("[data-testid=ws-switcher]")
@@ -343,9 +355,8 @@ def test_load_merges_defaults(ctx):
   )
   page = ctx.page(init_script=script)
   assert page.evaluate("XP.state.widths.list") == 280
-  assert page.evaluate("XP.state.widths.inspector") == 300
+  assert page.evaluate("XP.state.widths.inspector") == 280
   assert page.evaluate("XP.state.hidden.list") is True
-  assert page.evaluate("XP.state.hidden.inspector") is False
   assert page.evaluate("Array.isArray(XP.state.customWorkspaces)")
   assert page.locator("[data-testid=rail]").is_visible()
   page.context.close()
@@ -568,7 +579,12 @@ def test_group_objects_rows_have_no_inputs(ctx):
   first = page.locator("table [data-row='go1']")
   assert first.locator(".flags").inner_text().replace("\n", "").replace(" ", "") == "KLSÜA"
   assert first.locator(".flags b").count() == 3
-  assert first.locator(".chip").inner_text().strip() == "1/2/3"
+  chip = first.locator(".chip")
+  assert re.sub(r"\s+", "", chip.inner_text()).replace("(sendend)", "") == "→1/2/3", chip.inner_text()
+  assert chip.get_attribute("data-send") is not None
+  # the sending cue and the flag letters are explained in visible text, not only in tooltips
+  legend = page.locator("[data-testid=go-legend]").inner_text()
+  assert "→ sendende Gruppenadresse" in legend and "Ü Übertragen" in legend, legend
   page.context.close()
 
 
@@ -1223,7 +1239,7 @@ def test_monitor_times_ascending(ctx):
 
 @test
 def test_touch_targets_in_tab_strip(ctx):
-  context = ctx.browser.new_context(viewport={"width": 400, "height": 860}, has_touch=True, is_mobile=True)
+  context = ctx.new_context(viewport={"width": 400, "height": 860}, has_touch=True, is_mobile=True)
   page = context.new_page()
   page.goto(ctx.url())
   page.evaluate("XP.openObject('device','1.1.4')")
@@ -1242,6 +1258,228 @@ def test_group_address_links_fit_narrow(ctx):
   assert r[1], "linked-objects table scrolls horizontally"
   assert r[2] != "0px"
   page.context.close()
+
+
+def drag_by(page, testid, dx):
+  box = page.locator(f"[data-testid={testid}]").bounding_box()
+  x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+  page.mouse.move(x, y)
+  page.mouse.down()
+  page.mouse.move(x + dx / 2, y, steps=4)
+  page.mouse.move(x + dx, y, steps=4)
+  page.mouse.up()
+
+
+def insp_width(page):
+  return page.locator("[data-testid=inspector]").bounding_box()["width"]
+
+
+@test
+def test_inspector_resize(ctx):
+  page = ctx.page()
+  open_objects(page)
+  assert abs(insp_width(page) - 280) <= 1
+  drag_by(page, "splitter-inspector", -60)  # the splitter is on the left edge: left widens
+  assert page.evaluate("XP.state.widths.inspector") == 340
+  assert abs(insp_width(page) - 340) <= 1
+  page.focus("[data-testid=splitter-inspector]")
+  page.keyboard.press("ArrowLeft")
+  assert page.evaluate("XP.state.widths.inspector") == 356
+  page.keyboard.press("ArrowRight")
+  assert page.evaluate("XP.state.widths.inspector") == 340
+  assert page.evaluate("document.activeElement.dataset.testid") == "splitter-inspector"
+  drag_by(page, "splitter-inspector", -900)
+  assert page.evaluate("XP.state.widths.inspector") == 480, "clamped to the maximum"
+  drag_by(page, "splitter-inspector", 900)
+  assert page.evaluate("XP.state.widths.inspector") == 220, "clamped to the minimum"
+  drag_by(page, "splitter-inspector", -80)
+  page.reload()
+  open_objects(page)
+  assert page.evaluate("XP.state.widths.inspector") == 300
+  assert abs(insp_width(page) - 300) <= 1, "width survives a reload"
+  page.context.close()
+
+
+@test
+def test_inspector_default_per_mode(ctx):
+  page = ctx.page()
+  page.click("[data-row='1.1.4']")
+  insp = page.locator("[data-testid=inspector]")
+  assert insp.count() == 0, "closed by default with parameters"
+  page.click("[data-testid=mode-objects]")
+  assert insp.is_visible(), "open by default with group objects"
+  page.click("[data-testid=inspector-button]")
+  assert insp.count() == 0
+  page.click("[data-testid=mode-params]")
+  assert insp.count() == 0
+  page.click("[data-testid=inspector-button]")
+  assert insp.is_visible()
+  page.click("[data-testid=mode-objects]")
+  assert insp.count() == 0, "group objects remember their own choice"
+  page.click("[data-testid=mode-params]")
+  assert insp.is_visible(), "parameters remember their own choice"
+  page.context.close()
+
+
+@test
+def test_touch_selection_mode(ctx):
+  context = ctx.new_context(viewport={"width": 1280, "height": 800}, has_touch=True)
+  page = context.new_page()
+  page.on("pageerror", lambda e: ctx.errors.append(f"pageerror: {e}"))
+  page.goto(ctx.url())
+  page.tap("[data-row='1.1.4']")
+  page.tap("[data-testid=mode-objects]")
+  box = page.locator("[data-row='go1']").bounding_box()
+  page.mouse.move(box["x"] + 80, box["y"] + box["height"] / 2)
+  page.mouse.down()
+  page.wait_for_timeout(650)
+  page.mouse.up()
+  page.tap("[data-testid=context-menu] >> text=Auswählen")
+  bar = page.locator("[data-testid=select-bar]")
+  assert bar.is_visible()
+  assert page.locator("[data-testid=select-count]").inner_text().strip() == "1 Objekt ausgewählt"
+  page.tap("[data-row='go4']")
+  page.tap("[data-row='go7']")
+  assert page.locator("[data-testid=select-count]").inner_text().strip() == "3 Objekte ausgewählt"
+  checks = page.locator("[data-testid=go-table] td.ck").evaluate_all("els => els.map(e => e.textContent)")
+  assert checks.count("✓") == 3, checks
+  assert page.locator("table [data-row] :is(input,select,textarea,[contenteditable])").count() == 0
+  assert page.locator("[data-testid=inspector-title]").inner_text().strip() == "3 Objekte"
+  page.select_option("[data-testid=insp-dpt]", "1.003")
+  for r in ("go1", "go4", "go7"):
+    assert page.locator(f"[data-row='{r}'] .typ").inner_text().strip() == "Freigeben", r
+  page.tap("[data-row='go4']")  # a tap toggles
+  assert page.locator("[data-testid=select-count]").inner_text().strip() == "2 Objekte ausgewählt"
+  page.tap("[data-testid=select-done]")
+  assert bar.count() == 0
+  assert page.locator("[data-testid=go-table] .ck").count() == 0
+  page.tap("[data-row='go10']")  # back to single selection
+  assert page.evaluate("XP.state.goSel['1.1.4'].ids") == ["go10"]
+  context.close()
+
+
+SPACING_PROPS = re.compile(r"(?:^|[;{\s])((?:row-|column-)?gap|padding(?:-[a-z]+)?|margin(?:-[a-z]+)?)\s*:\s*([^;}]+)")
+SPACING_VAR = re.compile(r"var\(--(?:space-[0-9-]+|pad-[a-z-]+|gap-[a-z-]+)\)")
+SPACING_LITERAL = re.compile(r"^(?:0|auto|1px|[*+-]|-?\d+(?:\.\d+)?)$")
+
+
+@test
+def test_spacing_uses_tokens(ctx):
+  css = (ROOT / "app.css").read_text()
+  bad = []
+  for n, line in enumerate(css.splitlines(), 1):
+    for prop, value in SPACING_PROPS.findall(line):
+      rest = SPACING_VAR.sub(" ", value).replace("calc", " ").replace("(", " ").replace(")", " ")
+      for tok in rest.split():
+        if not SPACING_LITERAL.match(tok):
+          bad.append(f"app.css:{n}: {prop}: {value.strip()}")
+          break
+  assert not bad, "gap/padding/margin must use var(--space-*) or a density token (only 0 and 1px literal):\n" + "\n".join(bad)
+  tokens = (ROOT / "tokens.css").read_text()
+  assert "--space-0-5:2px" in tokens
+
+
+@test
+def test_meaning_in_visible_words(ctx):
+  page = ctx.page()
+  # planning rows carry no status dot; the editor header says the status in words
+  assert page.locator("[data-testid=device-rows] .row .dot").count() == 0
+  page.click("[data-row='1.1.4']")
+  assert page.locator("[data-testid=device-status]").inner_text().strip() == "Parameter geändert"
+  # group address tree: an unlinked address says so in a badge
+  page.click("[data-view=groupAddresses]")
+  unlinked = page.locator("[data-testid=ga-tree] [data-testid=ga-unlinked]")
+  assert unlinked.count() >= 1
+  assert unlinked.first.inner_text().strip() == "nicht verknüpft"
+  assert page.locator("[data-testid=ga-tree] .row .dot").count() == 0
+  # replace device: the takeover marks have words next to the symbols
+  page.evaluate("XP.openDialog('replace',{ref:'1.1.5'}); Object.assign(XP.state.dialog,{step:3,model:'other',found:true}); XP.render()")
+  marks = [t.strip() for t in page.locator("[data-testid=takeover-mark]").all_inner_texts()]
+  assert any(m.endswith("übernommen") for m in marks) and any(m.endswith("offen") for m in marks), marks
+  page.evaluate("XP.closeDialog()")
+  # the queue badge is a neutral count, status counts keep the warning colour
+  page.evaluate("XP.set({workspace:'commissioning', view:'commissioningDevices'}); XP.queue.enqueue('1.1.4','params')")
+  assert "neutral" in page.locator("[data-view=queue] [data-testid=rail-badge]").get_attribute("class")
+  assert "warn" in page.locator("[data-view=commissioningDevices] [data-testid=rail-badge]").get_attribute("class")
+  page.context.close()
+  page = ctx.page(400, 860)
+  word = page.locator("[data-testid=status-word]")
+  assert word.is_visible() and word.inner_text().strip() == "Offline", "narrow status pill shows a word"
+  page.evaluate("XP.set({connected:true})")
+  assert word.inner_text().strip() == "Verbunden"
+  page.context.close()
+
+
+@test
+def test_one_dialog_frame(ctx):
+  page = ctx.page()
+  open_objects(page)
+  page.click("[data-row='go1']")
+  opened = {
+    "rename": "XP.openDialog('rename',{type:'go',ref:'go1',value:'x'})",
+    "link": "XP.openDialog('link',{})",
+    "saveWorkspace": "XP.openDialog('saveWorkspace',{name:''})",
+    "program": "XP.openDialog('program',{ref:'1.1.4'})",
+  }
+  for kind, js in opened.items():
+    page.evaluate(js)
+    dlg = page.locator("[data-testid=dialog]")
+    assert dlg.get_attribute("data-kind") == kind
+    assert dlg.get_attribute("data-density") == "comfortable", kind
+    assert abs(dlg.bounding_box()["width"] - 480) <= 1, kind
+    assert "t-title" in page.locator("[data-testid=dialog-title]").get_attribute("class"), kind
+    assert page.evaluate("getComputedStyle(document.querySelector('[data-testid=dialog]')).paddingTop") == "24px", kind
+    page.keyboard.press("Escape")
+    assert dlg.count() == 0, kind
+  # rename: focus and Enter work through the shared frame
+  page.focus("[data-row='go1']")
+  page.keyboard.press("F2")
+  assert page.evaluate("document.activeElement.id") == "rn-name"
+  page.fill("[data-testid=rename-input]", "Neu benannt")
+  page.keyboard.press("Enter")
+  assert page.locator("[data-testid=dialog]").count() == 0
+  assert "Neu benannt" in page.locator("[data-row='go1']").inner_text()
+  page.context.close()
+
+
+@test
+def test_settings_comfortable(ctx):
+  page = ctx.page()
+  page.click("[data-testid=settings]")
+  pg = page.locator("[data-testid=settings-page]")
+  assert pg.get_attribute("data-density") == "comfortable"
+  h = page.locator("[data-setting=language] select").bounding_box()["height"]
+  assert h >= 31, h
+  # a full-width view repeats no sidebar heading; its bar holds the filter
+  assert pg.locator(".t-heading").count() == 0
+  page.context.close()
+
+
+def type_sizes(page):
+  return page.evaluate("""(() => {
+    const sizes = new Set();
+    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = walk.nextNode())) {
+      const el = n.parentElement;
+      if (!n.textContent.trim() || !el || el.closest('.empty-ico,.sr,option,[aria-hidden=true]')) continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height || getComputedStyle(el).visibility === 'hidden') continue;
+      sizes.add(getComputedStyle(el).fontSize);
+    }
+    return [...sizes].sort();
+  })()""")
+
+
+@test
+def test_at_most_three_type_sizes(ctx):
+  for name, step in SCREENSHOT_VIEWS:
+    for w in (1280, 400):
+      page = ctx.page(w, 860)
+      step(page)
+      sizes = type_sizes(page)
+      assert len(sizes) <= 3, (name, w, sizes)
+      page.context.close()
 
 
 def screenshots(ctx, out):
@@ -1285,6 +1523,9 @@ def main():
     except Exception as e:  # noqa: BLE001
       failed.append("screenshots")
       print(f"FAIL screenshots: {e}")
+    if ctx.requests:
+      failed.append("network")
+      print("FAIL network requests (must be none):\n" + "\n".join(sorted(set(ctx.requests))))
     if ctx.errors and "screenshots" not in failed:
       failed.append("console-errors")
       print("FAIL console errors:\n" + "\n".join(ctx.errors))

@@ -70,7 +70,7 @@
   gen("1.2.7", [go(1, "Präsenz", "1.001", "K-S--", ["1/2/4"]), go(2, "Helligkeit", "9.004", "K-S--", [])]);
   gen("1.2.8", [go(1, "Außentemperatur", "9.001", "K-S--", ["3/1/7"]), go(2, "Windgeschwindigkeit", "9.005", "K-S--", [])]);
   gen("1.2.9", [go(1, "Ausgang 1 Schalten", "1.001", "KS-Ü", ["1/2/8"])]);
-  byAddr("1.2.7").channels[0].params[1].value = "Erweitert"; byAddr("1.2.7").channels[0].params[1].changed = true;
+  byAddr("1.2.7").channels[0].params[0].value = "Erweitert"; byAddr("1.2.7").channels[0].params[0].changed = true;
   byAddr("1.1.3").channels[0].params[0].value = "Erweitert"; byAddr("1.1.3").channels[0].params[0].changed = true;
   byAddr("1.1.5").channels[0].params[0].value = "Erweitert"; byAddr("1.1.5").channels[0].params[0].changed = true;
   byAddr("1.2.1").groupObjects = [go(1, "Stellwert Kanal 1", "5.001", "KS-Ü", ["3/2/1"])];
