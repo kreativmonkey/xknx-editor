@@ -10,7 +10,7 @@ UI, not the code. Put the score table and the open findings into the PR descript
 
 | Criterion | 0 | 1 | 2 | 3 |
 |---|---|---|---|---|
-| **Hierarchy** | everything looks equal | primary content findable with effort | clear primary, secondary blurs | primary → secondary → tertiary obvious at a glance, by type and space, ≤ 3 type styles |
+| **Hierarchy** | everything looks equal | primary content findable with effort | clear primary, secondary blurs | primary → secondary → tertiary obvious at a glance, by type and space, ≤ 3 type sizes per view (weights of one size count once) |
 | **Density fit** | wrong preset for the surface | right preset, but crowded or sparse spots | fits, small leaks | compact work / comfortable guided / comfortable touch, nothing shrunk to fit (hidden instead) |
 | **States** | only the happy path | some states missing | all states, some look alike | empty, filtered-to-nothing, loading, error, disabled, selected, many rows each designed and distinct |
 | **Consistency** | local styles, literals | mostly tokens, some local helpers | tokens + shared widgets, small drift | only tokens and `widgets/` components; matches the prototype |

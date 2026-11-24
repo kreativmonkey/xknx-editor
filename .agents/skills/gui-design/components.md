@@ -11,12 +11,12 @@ A sidebar entry opens a **view** in the main area of the shell (see *App shell*)
 - **Object view** (Devices, Group Addresses, Buildings): the list column shows the objects,
   the main area shows the editor tabs. The view has no title of its own: the sidebar row and
   the tab name it.
-- **Full-width view** (Group Monitor, Settings, Project Info, Export): no list column; the
-  view fills the main area:
+- **Full-width view** (Group Monitor, Settings, Project Info, Export, Queue): no list column;
+  the view fills the main area. It has no heading either: the selected sidebar row names it.
 
 ```
 ┌ main area ─────────────────────────────────────────────┐
-│ Group Monitor          1 234 telegrams  [Pause]  [⋯]   │  view bar: heading + caption + actions
+│ Live · 1 234 telegrams                 [Pause] [⋯]     │  view bar: filter/status + actions
 │ [GA ……] [value ……] [Read] [Write]                      │  optional command bar (inputs allowed)
 │────────────────────────────────────────────────────────│
 │ content (table / tree), fills the area, own scroll     │
@@ -25,15 +25,20 @@ A sidebar entry opens a **view** in the main area of the shell (see *App shell*)
 └────────────────────────────────────────────────────────┘
 ```
 
-- Toolbar or view bar on top: the filter on the left, actions on the right (and below the filter
-  when narrow). The primary action is a labelled button. The rest goes into an overflow "⋯"
-  menu that also opens by long press.
+- Toolbar or view bar on top: the filter and the view's status (a `caption` such as "Live ·
+  1 234 telegrams" or "1 running · 2 waiting") on the left, actions on the right (and below the
+  filter when narrow). It never repeats the view's name. The primary action is a labelled
+  button. The rest goes into an overflow "⋯" menu that also opens by long press.
 - **Inputs:** the rule is "no inputs in list **rows**". A toolbar or command bar above a list may
   hold inputs (filter, the monitor's group address + value + Read/Write). Per-record actions
   go to the inspector and the context menu, never into the row.
 - Content scrolls on its own. Toolbar and footer stay fixed.
 - Selection, the context menu and double-click must do the same on touch (long press = right
   click, tap = select, a visible "Open" action for double-click).
+- **Multi-select on touch:** the row's long-press menu has "Select". It starts a selection mode:
+  a tap toggles a row, selected rows show a check mark in a leading column (a symbol, not a
+  checkbox input), and a bar above the table says the count with the plural form ("3 group
+  objects selected") plus "Done" (Esc too). The inspector edits all selected rows.
 - Docking stays for rearranging: the user can move, dock or hide the list, editor, inspector
   and views (hello_imgui). A docked panel's tab then names it; still no title inside.
 
@@ -80,6 +85,9 @@ Telegrams, log lines and bus events are transient records, not project objects:
   `bg.hover`, selection `bg.selected` + a 2 px marker at the left edge (see *Selection marker*).
 - Cells are read-only (overview + detail): text, letters for flags (mono), addresses as chips,
   the type as a name, badges. No input fields, combos or checkboxes in a row.
+- A cue that is a symbol or letter gets a visible legend under the table (`caption`), e.g.
+  "→ sending group address · Flags: C Communication, R Read, …". The sending address chip
+  has an `accent.marker` edge **and** the "→" (`accent.link`), never the colour alone.
 - Header: `label` style, `text.secondary`, sticky.
 - Numbers, addresses and sizes are right-aligned and tabular. Text is left-aligned. Status columns show a badge.
 - Truncate with an ellipsis. The full text appears on hover **and** in the details/inspector
@@ -112,7 +120,9 @@ The order is always error → warning → info → success.
 ## Badges and status
 
 - **Badge:** a pill (`radius 999`), `caption` text, `status.*.subtle` background +
-  `status.*` text, and an icon for status. Used for counts, states and tags.
+  `status.*.text` text, and an icon for status. Used for counts, states and tags. A plain
+  count (queue length) is a neutral badge (`bg.raised` + `text.secondary`); status colours are
+  only for counts that mean a state ("5 open", warnings).
 - **Status dot:** an 8 px circle + a word, for connection/programming state in lists.
 - **Banner:** a full-width block for state that concerns the whole panel (offline,
   project read-only). It has icon + sentence + optional action and can be dismissed if not critical.
@@ -121,9 +131,12 @@ The order is always error → warning → info → success.
 
 ## Forms and settings (guided surface)
 
+Settings is a guided surface: comfortable density (≈ 32 px controls), `space(8)` between groups.
+
 - Labels sit in a left column (`label_column_width`, the same width within a form) and are vertically
   centered to the control. On narrow screens the label goes above the field.
-- Group fields under section headings (`title`), with `space(6)` between groups.
+- Group fields under section headings (`title`), with `space(6)` between groups (`space(8)` on a
+  full page such as Settings).
   No group boxes.
 - A hint line below a field uses `caption` + `text.secondary`. Validation errors replace the
   hint in `status.error`, with an icon, and appear on edit/blur, not on open.
@@ -131,9 +144,10 @@ The order is always error → warning → info → success.
 
 ## Dialogs (`begin_dialog`)
 
-- Comfortable density, `window_padding` `space(6)`, `title` heading.
-- Width is 480 for confirmation, 640 for forms, 880 for wizards (clamped to the screen;
-  full-screen sheet on narrow).
+- One frame for **every** dialog, also the small ones (Rename, Link, Save as Workspace):
+  comfortable density, `window_padding` `space(6)`, `title` heading.
+- Width is 480 for confirmation and single fields, 640 for forms, 880 for wizards (clamped to
+  the screen; full-screen sheet on narrow).
 - Layout: heading → one sentence of context → content → button row
   (`dialog_buttons`: secondary "Cancel", primary action named by its verb — "Delete 3 Devices",
   not "OK").
@@ -149,10 +163,11 @@ The order is always error → warning → info → success.
 ## Selection marker
 
 Selected rows (tables, trees, page list, palette, highlighted setting) get `bg.selected`
-plus a 2 px left marker. In dark the selection fill is close to the canvas, so the marker
-carries the selection: it must reach **≥ 3:1 against `bg.selected`**. `accent` gets only
-2.65:1 there, so use `accent.link` (5.7:1) in dark; `accent` (3.7:1) or `accent.link` in light.
-Selected text stays `text.primary`; never mark selection by color alone.
+plus a 2 px left marker in `accent.marker`. In dark the selection fill is close to the canvas,
+so the marker carries the selection: it must reach **≥ 3:1 against `bg.selected`** (and the
+focus ring, which uses the same role, ≥ 3:1 on raised and inset). `accent` gets only 2.65:1
+there; `accent.marker` gets 5.7:1 in dark and 3.7:1 in light. Selected text stays
+`text.primary`; never mark selection by color alone.
 
 ## App shell
 
@@ -172,9 +187,10 @@ Selected text stays `text.primary`; never mark selection by color alone.
 - **Top bar** (`bg.canvas`, `border.subtle` below): product, project name (truncates first),
   workspace switcher (bordered, caption, menu with the workspaces, "Save as Workspace…"),
   ⌘K search field (`bg.inset` + `border.control`), connection **status pill** (pill, dot + word,
-  `border.subtle`), settings gear. Narrow: project name, pill word and search hint hide; the dot stays.
+  `border.control`), settings gear. Narrow: project name and search hint hide; the pill keeps
+  the dot and a short word ("Offline", "Connected") instead of the interface name.
 - **View sidebar** (`bg.canvas`): `label`-style group names, rows of icon + label + count or
-  badge. Selected row `bg.raised`, its icon `accent.link`. Collapsed to 48 the labels hide and
+  badge (neutral for a plain count, status colours only for a state). Selected row `bg.raised`, its icon `accent.link`. Collapsed to 48 the labels hide and
   show on hover **and** long press. The workspace decides which rows exist.
 - **List column** (`bg.surface`): sticky filter on top, rows grouped by `label` headers
   (devices by line). Width draggable; can be hidden.
@@ -199,22 +215,27 @@ Selected text stays `text.primary`; never mark selection by color alone.
 
 For lists inside an editor (Group Objects, linked objects):
 
-- A right column **inside the editor**, ≈ 280 wide, `border.subtle` on its left, collapsible
-  and resizable. Narrow: below the table, or a full-screen sheet with a close action.
-- Header: name (`title`) + one caption line of key facts ("1.1.4 · MDT AKS-0816.03 · Kitchen").
-  Do not repeat facts that fit in that line as a label/value table.
+- A right column **inside the editor**, ≈ 280 wide (220–480, a splitter on its left edge,
+  pointer and arrow keys, width remembered), `border.subtle` on its left, collapsible.
+  Narrow: below the table, or a full-screen sheet with a close action.
+- Open by default where it edits the list (Group Objects), closed by default where the content
+  needs the width (Parameters); the user's choice is remembered per mode.
+- It never repeats the editor header (name, address, product, room) as a label/value table:
+  it shows only what is editable or not in the header.
+- Header of a selection: its name (`title`) + one caption line ("Object 1 · Switch").
 - Body: the editable fields of the selection, flags as toggle buttons (`border.control`,
-  on = `bg.selected` + `accent` edge), linked addresses as chips with remove "×", then actions.
+  on = `bg.selected` + `accent.marker` edge), linked addresses as chips with remove "×", then actions.
 - Multi-selection: header says the count ("3 Group Objects"); fields that differ show
   "Mixed" and change all selected on edit, as **one** undo step.
-- Nothing selected: the facts of the open object plus one `caption` hint how to select
-  ("Select group objects in the list (Ctrl/Shift-click for several) to edit them here").
+- Nothing selected: one `caption` hint how to select ("Select group objects in the list
+  (Ctrl/Shift-click for several; on touch long press and "Select") to edit them here"), then
+  the object's extra detail that is not in the header (description) and its actions (Rename…).
 
 ## Page list (parameter pages)
 
 - A column on the left inside the device editor, ≈ 160 wide, instead of tab rows.
 - Rows: `row-h`, `text.secondary`; selected `bg.selected` + `text.primary` + marker.
-  A page with changed values shows a 6 px `accent` dot (plus "Changed" in its tooltip and in
+  A page with changed values shows a 6 px `accent.marker` dot (plus "Changed" in its tooltip and in
   the "Changed" filter, so the dot is not the only cue).
 - Narrow: the page list becomes a select above the content.
 - Content: section headings per parameter group, labels left in a fixed column, controls
@@ -239,7 +260,7 @@ For lists inside an editor (Group Objects, linked objects):
   Address) are one dialog; longer ones (Replace Device) get steps.
 - Step header: a row of steps, each a 20 px number circle + `caption` label over a 2 px
   bottom line. Upcoming: `border.subtle` line, `bg.inset` circle, `text.secondary`.
-  Current: `accent` line and circle (`accent.text` number), `text.primary`. Done: `text.primary`
+  Current: `accent.marker` line, `accent` circle (`accent.text` number), `text.primary`. Done: `text.primary`
   with a check. Narrow: only the current step shows its label.
 - One question per step. "Back" (secondary) and the primary action named by its result
   ("Change Address to 1.1.20", "Add to Queue"). Checks show inline as icon + sentence in
@@ -247,8 +268,8 @@ For lists inside an editor (Group Objects, linked objects):
 - Waiting for the user (press the programming button) shows a visible wait line
   (`status.warning.text` + a static icon + "Cancel"), not a spinner alone.
 - Review step: one row per item taken over: label, value, and a mark that differs in shape,
-  not only color (✓ taken over / ! open, `status.*.text`). The meaning of the marks is visible
-  (a word beside the mark or a caption legend), not only in the tooltip and accessible name.
+  not only color, with its word beside it ("✓ taken over" / "! open", `status.*.text`), never
+  only in the tooltip or accessible name.
 
 ## Queue row
 
