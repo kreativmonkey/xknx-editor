@@ -90,7 +90,8 @@ Starting values. Verify contrast after every change.
 | `bg.hover` | `#FFFFFF0F` | `#0000000A` | row/control hover overlay |
 | `bg.selected` | `#2E436E` | `#D4E2FF` | selected rows |
 | `border.subtle` | `#393B40` | `#EBECF0` | dividers, table lines |
-| `border.strong` | `#4E5157` | `#C9CCD6` | input outlines, dialog edges |
+| `border.strong` | `#4E5157` | `#C9CCD6` | dialog and popup edges |
+| `border.control` | `#777B83` | `#878B98` | outlines of inputs, selects, checkboxes, toggles, segmented controls (≥ 3:1 on `bg.surface` and `bg.inset`) |
 | `text.primary` | `#DFE1E5` | `#1E1F22` | body |
 | `text.secondary` | `#9DA0A8` | `#686C79` | metadata, hints, captions |
 | `text.disabled` | `#6F737A` | `#A8ADBD` | disabled |

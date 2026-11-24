@@ -24,7 +24,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 .menu .btn{width:100%;justify-content:flex-start;height:var(--row-h)}
 .menu .btn.sel{color:var(--accent)}
 .spacer{flex:1}
-.search{display:flex;align-items:center;gap:var(--space-2);width:300px;max-width:100%;height:var(--control-h);padding:0 var(--space-3);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:var(--radius-control);color:var(--text-disabled);font-size:var(--fs-caption);text-align:left;min-width:0}
+.search{display:flex;align-items:center;gap:var(--space-2);width:300px;max-width:100%;height:var(--control-h);padding:0 var(--space-3);background:var(--bg-inset);border:1px solid var(--border-control);border-radius:var(--radius-control);color:var(--text-disabled);font-size:var(--fs-caption);text-align:left;min-width:0}
 .search .trunc{flex:1}
 .pill{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-caption);color:var(--text-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-pill);padding:2px var(--space-3);white-space:nowrap}
 .dot{width:8px;height:8px;border-radius:var(--radius-pill);background:var(--text-disabled);flex:none}
@@ -104,7 +104,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 /* dialog */
 .dialog{position:fixed;z-index:41;left:50%;top:20%;transform:translateX(-50%);width:min(380px,calc(100vw - 32px));display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-4);background:var(--bg-raised);border:1px solid var(--border-strong);border-radius:var(--radius-popup)}
 .dialog .actions{display:flex;justify-content:flex-end;gap:var(--space-2);margin-top:var(--space-2)}
-.input{height:var(--control-h);padding:0 var(--space-2);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:var(--radius-control);color:var(--text-primary);font:inherit;min-width:0}
+.input{height:var(--control-h);padding:0 var(--space-2);background:var(--bg-inset);border:1px solid var(--border-control);border-radius:var(--radius-control);color:var(--text-primary);font:inherit;min-width:0}
 .btn.primary{background:var(--accent);color:var(--accent-text)}
 .btn.primary:hover{background:var(--accent-hover)}
 
@@ -146,7 +146,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 .dev-body{display:flex;flex:1;min-height:0}
 .dev-main{display:flex;flex:1;min-width:0;min-height:0}
 .dev-main:has(> .tblwrap){flex-direction:column}
-.btn.bordered{border:1px solid var(--border-strong)}
+.btn.bordered{border:1px solid var(--border-control)}
 .btn.bordered.on{background:var(--bg-raised)}
 .btn.link{color:var(--accent);padding:0 var(--space-2)}
 .seg{display:flex;background:var(--bg-inset);border-radius:var(--radius-popup);padding:2px;gap:2px}
@@ -171,7 +171,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 .prow.chg .plabel{color:var(--text-primary)}
 .pgh{padding:var(--space-4) 0 var(--space-1)}
 .pempty{padding:var(--space-4) 0}
-.ctl{height:var(--control-h);padding:0 var(--space-2);background:var(--bg-inset);border:1px solid var(--border-strong);border-radius:var(--radius-control);color:var(--text-primary);font:inherit;min-width:0;max-width:100%}
+.ctl{height:var(--control-h);padding:0 var(--space-2);background:var(--bg-inset);border:1px solid var(--border-control);border-radius:var(--radius-control);color:var(--text-primary);font:inherit;min-width:0;max-width:100%}
 .ctl.numin{width:100px}
 .ctl.block{width:100%}
 
@@ -207,7 +207,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 .irow{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3)}
 .hintbox{margin-top:var(--space-4)}
 .tog{display:flex;gap:var(--space-1)}
-.tog button{border:1px solid var(--border-strong);border-radius:var(--radius-control);min-width:var(--control-h);height:var(--control-h);padding:0 var(--space-2);color:var(--text-secondary);font-size:var(--fs-caption)}
+.tog button{border:1px solid var(--border-control);border-radius:var(--radius-control);min-width:var(--control-h);height:var(--control-h);padding:0 var(--space-2);color:var(--text-secondary);font-size:var(--fs-caption)}
 .tog button.on{background:var(--bg-selected);border-color:var(--accent);color:var(--text-primary)}
 .chiplist{display:flex;flex-direction:column;align-items:flex-start}
 .insp-bar{display:flex;padding:var(--space-2) var(--space-3);border-bottom:1px solid var(--border-subtle);flex:none}

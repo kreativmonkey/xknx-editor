@@ -28,7 +28,7 @@
   color-scheme:dark;
   --bg-canvas:#1E1F22;--bg-surface:#2B2D30;--bg-raised:#393B40;--bg-inset:#232427;
   --bg-hover:#FFFFFF0F;--bg-selected:#2E436E;
-  --border-subtle:#393B40;--border-strong:#4E5157;
+  --border-subtle:#393B40;--border-strong:#4E5157;--border-control:#777B83;
   --text-primary:#DFE1E5;--text-secondary:#9DA0A8;--text-disabled:#6F737A;
   --accent:#3370E8;--accent-hover:#2B62D3;--accent-text:#FFFFFF;
   --status-success:#5FB865;--status-warning:#E5A63B;--status-error:#F86775;--status-info:#6395F8;
@@ -41,7 +41,7 @@
   color-scheme:light;
   --bg-canvas:#F7F8FA;--bg-surface:#FFFFFF;--bg-raised:#FFFFFF;--bg-inset:#F2F3F5;
   --bg-hover:#0000000A;--bg-selected:#D4E2FF;
-  --border-subtle:#EBECF0;--border-strong:#C9CCD6;
+  --border-subtle:#EBECF0;--border-strong:#C9CCD6;--border-control:#878B98;
   --text-primary:#1E1F22;--text-secondary:#686C79;--text-disabled:#A8ADBD;
   --accent:#3370E8;--accent-hover:#2E5FC9;--accent-text:#FFFFFF;
   --status-success:#1F843A;--status-warning:#A76400;--status-error:#D1293D;--status-info:#3370E8;

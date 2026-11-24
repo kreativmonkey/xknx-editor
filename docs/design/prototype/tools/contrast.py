@@ -1,7 +1,7 @@
 """WCAG contrast ratios for the token pairs in tokens.css (stdlib only).
 
 Run: python docs/design/prototype/tools/contrast.py   (exit 1 when a pair fails)
-Text needs 4.5:1, accent as UI 3:1. Borders are decorative (need 0, shown for information).
+Text needs 4.5:1, accent as UI 3:1. border-control needs 3:1 on surface and inset; border-strong/subtle are decorative.
 """
 import re
 import sys
@@ -52,7 +52,9 @@ def main():
              ("accent-text on accent", "accent-text", "accent", 4.5),
              ("accent-text on accent-hover", "accent-text", "accent-hover", 4.5),
              ("accent on surface (text/UI)", "accent", "bg-surface", 3.0),
-             ("border-strong on surface (decorative)", "border-strong", "bg-surface", 0)]
+             ("border-control on surface (UI)", "border-control", "bg-surface", 3.0),
+             ("border-control on inset (UI)", "border-control", "bg-inset", 3.0),
+             ("border-strong (dialog edge, decor.)", "border-strong", "bg-surface", 0)]
     for s in ("success", "warning", "error", "info"):
       pairs.append((f"status-{s} on surface", f"status-{s}", "bg-surface", 4.5))
     print(f"[{theme}]")
