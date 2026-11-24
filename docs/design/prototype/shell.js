@@ -42,7 +42,7 @@
         ${s.viewMenuOpen ? viewMenu() : ""}
       </div>
       <span class="spacer"></span>
-      <button class="search" data-testid="search" data-action="palette" title="Suche (Strg+K)"><span class="mono">⌘K</span><span class="trunc hint">Gerät, Adresse, Einstellung, Befehl…</span></button>
+      <button class="search" data-testid="search" data-fk="search" data-action="palette" title="Suche (Strg+K)"><span class="mono">⌘K</span><span class="trunc hint">Gerät, Adresse, Einstellung, Befehl…</span></button>
       <span class="pill" data-testid="status-pill"><span class="dot ${s.connected ? "ok" : ""}"></span><span class="lbl trunc">${s.connected ? "IP-Router 1.0.0" : "Offline"}</span></span>
       <button class="btn" data-testid="theme-toggle" data-action="theme" title="Hell/Dunkel wechseln">${s.theme === "dark" ? "☾" : "☀"}</button>
       <button class="btn ${s.view === "settings" ? "on" : ""}" data-testid="settings" data-action="view" data-view="settings" title="Einstellungen">⚙</button>

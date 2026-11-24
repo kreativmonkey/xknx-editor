@@ -33,6 +33,10 @@ SCREENSHOT_VIEWS = [
     "XP.set({workspace:'commissioning', view:'commissioningDevices'}); XP.openObject('commissioningDevice','1.1.4',{pin:true}); XP.queue.enqueue('1.1.5','all')")),
   ("changeAddress", lambda page: page.evaluate(
     "XP.set({workspace:'commissioning', view:'commissioningDevices'}); XP.openObject('commissioningDevice','1.1.4',{pin:true}); XP.openDialog('changeAddress',{ref:'1.1.4'})")),
+  ("diagnostics", lambda page: page.evaluate("XP.set({workspace:'diagnostics', view:'groupMonitor', connected:true})")),
+  ("handover", lambda page: page.evaluate("XP.set({workspace:'handover', view:'projectInfo'})")),
+  ("settings", lambda page: page.evaluate("XP.openSetting('t-ack')")),
+  ("palette", lambda page: page.evaluate("XP.palette.open('Licht')")),
   ("replaceDevice", lambda page: page.evaluate(
     "XP.set({workspace:'commissioning', view:'commissioningDevices'}); XP.openDialog('replace',{ref:'1.1.5'}); Object.assign(XP.state.dialog,{step:3,model:'other',found:true}); XP.render()")),
 ]
@@ -972,6 +976,192 @@ def test_commissioning_long_name_narrow(ctx):
   page.click("[data-row='1.2.9']")
   assert page.evaluate("document.body.scrollWidth <= document.body.clientWidth")
   page.context.close()
+
+
+@test
+def test_palette_finds_setting(ctx):
+  page = ctx.page()
+  page.keyboard.press("Control+k")
+  assert page.locator("[data-testid=palette]").is_visible()
+  page.keyboard.type("Zeitüberschreitung")
+  page.keyboard.press("Enter")
+  assert page.locator("[data-testid=palette]").count() == 0
+  assert page.evaluate("XP.state.view") == "settings"
+  hl = page.locator("[data-testid=settings-page] [data-highlight]")
+  assert hl.count() == 1
+  assert "Zeitüberschreitung" in hl.inner_text()
+  page.context.close()
+
+
+@test
+def test_palette_opens_device(ctx):
+  page = ctx.page()
+  page.click("[data-testid=search]")
+  page.keyboard.type("1.1.12")
+  page.keyboard.press("Enter")
+  tab = page.locator("[data-testid=tabs] [data-tab]")
+  assert tab.count() == 1
+  assert tab.first.get_attribute("title") == "1.1.12 Tastsensor Flur"
+  page.context.close()
+
+
+@test
+def test_palette_groups_keys_escape(ctx):
+  page = ctx.page()
+  page.keyboard.press("Control+k")
+  page.keyboard.type("Licht")
+  labels = page.locator("[data-testid=palette] .pal-grp").all_inner_texts()
+  assert "Gruppenadressen" in [x.strip() for x in labels], labels
+  assert page.locator("[data-testid=palette] [data-group=ga] .pal-item").count() <= 8
+  first = page.evaluate("document.querySelector('[data-testid=palette] .pal-item[aria-selected=true]').id")
+  page.keyboard.press("ArrowDown")
+  second = page.evaluate("document.querySelector('[data-testid=palette] .pal-item[aria-selected=true]').id")
+  assert first != second
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=palette]").count() == 0
+  page.keyboard.press("Control+k")
+  page.keyboard.press("Control+k")
+  assert page.locator("[data-testid=palette]").count() == 0
+  page.context.close()
+
+
+@test
+def test_palette_command_change_address(ctx):
+  page = ctx.page()
+  page.click("[data-row='1.1.4']")
+  page.keyboard.press("Control+k")
+  page.keyboard.type("Adresse ändern")
+  page.keyboard.press("Enter")
+  dlg = page.locator("[data-testid=dialog]")
+  assert dlg.is_visible()
+  assert page.evaluate("XP.state.dialog.kind") == "changeAddress"
+  assert page.evaluate("XP.state.dialog.ref") == "1.1.4"
+  page.keyboard.press("Escape")
+  page.keyboard.press("Control+k")
+  page.keyboard.type("Arbeitsbereich: Inbetriebnahme")
+  page.keyboard.press("Enter")
+  assert page.evaluate("XP.state.workspace") == "commissioning"
+  page.keyboard.press("Control+k")
+  page.keyboard.type("Hell/Dunkel")
+  before = page.evaluate("XP.state.theme")
+  page.keyboard.press("Enter")
+  assert page.evaluate("XP.state.theme") != before
+  page.context.close()
+
+
+@test
+def test_palette_narrow_full_width(ctx):
+  page = ctx.page(400, 860)
+  page.click("[data-testid=search]")
+  box = page.locator("[data-testid=palette]").bounding_box()
+  assert box["width"] >= 399, box
+  assert page.evaluate("document.body.scrollWidth <= document.body.clientWidth")
+  page.context.close()
+
+
+@test
+def test_settings_search_flat(ctx):
+  page = ctx.page()
+  page.click("[data-testid=settings]")
+  pg = page.locator("[data-testid=settings-page]")
+  assert pg.is_visible()
+  assert pg.locator("[role=tab], [role=tablist]").count() == 0
+  assert pg.locator("[data-testid=settings-row]").count() >= 15
+  groups = [g.strip() for g in pg.locator("[data-testid=settings-group]").all_inner_texts()]
+  for g in ("Allgemein", "Verbindung", "Backups", "KI/MCP", "Ordner"):
+    assert g in groups, groups
+  page.fill("[data-testid=settings-search]", "Backup")
+  groups = pg.locator("[data-testid=settings-group]").all_inner_texts()
+  assert [g.strip() for g in groups] == ["Backups"], groups
+  rows = pg.locator("[data-testid=settings-row]")
+  assert rows.count() >= 2
+  assert set(rows.evaluate_all("els => els.map(e => e.dataset.group)")) == {"backups"}
+  page.fill("[data-testid=settings-search]", "qqqq")
+  assert pg.locator("[data-testid=settings-row]").count() == 0
+  assert pg.locator("[data-testid=settings-empty]").is_visible()
+  page.context.close()
+
+
+@test
+def test_monitor_pause(ctx):
+  page = ctx.page()
+  go_workspace(page, "diagnostics")
+  rows = page.locator("[data-testid=telegram-row]")
+  assert rows.count() == 30
+  page.click("[data-testid=mon-connect]")
+  page.wait_for_function("document.querySelectorAll('[data-testid=telegram-row]').length > 30")
+  page.click("[data-testid=mon-pause]")
+  n = rows.count()
+  page.wait_for_timeout(3000)
+  assert rows.count() == n
+  page.click("[data-testid=mon-pause]")
+  page.wait_for_function(f"document.querySelectorAll('[data-testid=telegram-row]').length > {n}")
+  page.context.close()
+
+
+@test
+def test_monitor_commands(ctx):
+  page = ctx.page()
+  go_workspace(page, "diagnostics")
+  assert page.locator("[data-testid=mon-write]").is_disabled()
+  page.click("[data-testid=mon-connect]")
+  n = page.locator("[data-testid=telegram-row]").count()
+  page.fill("[data-testid=mon-ga]", "1/2/3")
+  page.fill("[data-testid=mon-value]", "Ein")
+  page.click("[data-testid=mon-write]")
+  first = page.locator("[data-testid=telegram-row]").first
+  assert "1/2/3" in first.inner_text() and "Write" in first.inner_text() and "Ein" in first.inner_text()
+  page.click("[data-testid=mon-read]")
+  page.wait_for_function("document.querySelector('[data-testid=telegram-row]').innerText.includes('Response')")
+  assert page.locator("[data-testid=telegram-row]").count() >= n + 3
+  page.fill("[data-testid=mon-ga]", "abc")
+  page.click("[data-testid=mon-write]")
+  assert page.locator("[data-testid=mon-error]").is_visible()
+  page.context.close()
+
+
+@test
+def test_every_workspace_rail_views_render(ctx):
+  page = ctx.page()
+  spaces = page.evaluate("Object.keys(XP.WORKSPACES)")
+  assert len(spaces) == 4
+  for w in spaces:
+    go_workspace(page, w)
+    views = page.evaluate("XP.WORKSPACES['%s'].rail.flatMap(g => g.items)" % w)
+    for v in views:
+      page.click(f"[data-testid=rail] [data-view={v}]")
+      assert page.evaluate("XP.state.view") == v
+      assert page.locator("[data-testid=editor]").inner_text().strip(), (w, v)
+      if page.evaluate(f"!!XP.VIEWS['{v}'].placeholder"):
+        ph = page.locator("[data-testid=placeholder]")
+        assert ph.is_visible(), (w, v)
+        assert ph.locator(".t-title").inner_text().strip() == page.evaluate(f"XP.VIEWS['{v}'].label"), (w, v)
+  page.context.close()
+
+
+@test
+def test_handover_read_views(ctx):
+  page = ctx.page()
+  go_workspace(page, "handover")
+  assert page.locator("[data-testid=project-info]").is_visible()
+  assert "Musterhaus" in page.locator("[data-testid=project-info]").inner_text()
+  page.click("[data-testid=rail] [data-view=export]")
+  assert page.locator("[data-testid=export-page]").is_visible()
+  page.context.close()
+
+
+@test
+def test_other_views_narrow_no_scroll(ctx):
+  page = ctx.page(400, 860)
+  for v in ("groupMonitor", "settings", "projectInfo", "export", "backups"):
+    page.evaluate(f"XP.set({{view:'{v}', activeTab:null}})")
+    assert page.evaluate("document.body.scrollWidth <= document.body.clientWidth"), v
+  page.context.close()
+
+
+def go_workspace(page, ws):
+  page.click("[data-testid=ws-switcher]")
+  page.click(f"[data-ws={ws}]")
 
 
 def screenshots(ctx, out):
