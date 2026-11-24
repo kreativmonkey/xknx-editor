@@ -206,10 +206,29 @@ As in `.agents/skills/gui-design/` (design-system.md, components.md):
 
 ## After the prototype (outline)
 
+**Decided 2026-11-24: the new UI ships as a switchable alternative**,
+not as an in-place replacement and not as a big-bang rebuild:
+
+- Both UIs sit on the same plugin services (`service.py`), so KNX logic, undo
+  and MCP stay single-sourced. Only the presentation layer exists twice during
+  the transition.
+- Setting *Settings › Interface: Classic | New* (plus a CLI option, documented
+  per AGENTS.md), default Classic until parity.
+- From day one the new shell hosts every not-yet-redesigned panel unchanged
+  as a tab, so the new UI is fully usable while it is being migrated.
+- The browser UI (`--web`) and touch work in the new shell from the start.
+- Parity reached → New becomes the default → Classic is removed one release later.
+
+Phases:
+
 1. Validate the prototype and adjust the design and the skill.
-2. Phase 1: tokens + custom theme + guard test + screenshot command.
-3. Phase 2: shell (sidebar, tabs, workspaces as saved layouts) + shared components.
-4. Phase 3: migrate the views one by one (MCP, browser UI, tests in every change).
+2. Phase 1: tokens + custom theme + guard test + screenshot command
+   (the theme benefits both UIs).
+3. Phase 2: the switchable shell (sidebar, tabs, workspaces as saved layouts,
+   legacy panels hosted as tabs) + shared components.
+4. Phase 3: migrate the views one by one inside the new shell
+   (MCP, browser UI, tests in every change).
+5. Switch the default, then remove the classic UI.
 
 ## Left to the builder
 
