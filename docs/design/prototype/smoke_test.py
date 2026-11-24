@@ -9,6 +9,7 @@ Extending (later tasks):
 Any failed test or console error makes the script exit non-zero.
 """
 import argparse
+import os
 import re
 import sys
 import traceback
@@ -24,6 +25,10 @@ SCREENSHOT_VIEWS = [
   ("shell", lambda page: None),
   ("list-preview", lambda page: page.evaluate("XP.openObject('device','1.1.4')")),
   ("tabs-many", lambda page: page.evaluate("XP.data.devices.slice(0,12).forEach(d => XP.openObject('device', d.address, {pin:true}))")),
+  ("devices", lambda page: page.evaluate("XP.openObject('device','1.1.4',{pin:true})")),
+  ("groupObjects", lambda page: page.evaluate(
+    "XP.openObject('device','1.1.4',{pin:true}); XP.planning.mode('1.1.4','objects'); XP.planning.select('1.1.4',['go1','go4'])")),
+  ("groupAddresses", lambda page: page.evaluate("XP.set({view:'groupAddresses'}); XP.openObject('groupAddress','1/2/3',{pin:true})")),
 ]
 SIZES = [(1280, 800), (800, 1100), (400, 860)]
 THEMES = ["light", "dark"]
@@ -47,6 +52,7 @@ class Ctx:
     if init_script:
       context.add_init_script(init_script)
     page = context.new_page()
+    page.set_default_timeout(int(os.environ.get("XP_TIMEOUT", "30000")))
     page.on("console", lambda m: m.type == "error" and self.errors.append(f"console: {m.text}"))
     page.on("pageerror", lambda e: self.errors.append(f"pageerror: {e}"))
     page.goto(self.url(query))
@@ -418,6 +424,261 @@ def test_pin_button_touch_flow(ctx):
   page.click("[data-row='1.1.12']")
   assert tab_count(page) == 2, tab_count(page)
   assert page.locator("[data-testid=pin-tab]").is_visible()
+  page.context.close()
+
+
+def open_objects(page, addr="1.1.4"):
+  page.click(f"[data-row='{addr}']")
+  page.click("[data-testid=mode-objects]")
+
+
+@test
+def test_device_editor_page_list(ctx):
+  page = ctx.page()
+  page.click("[data-row='1.1.4']")
+  texts = [t.strip() for t in page.locator("[data-testid=page-list] [data-page]").all_inner_texts()]
+  assert texts == ["Allgemein"] + [f"Kanal {c}" for c in "ABCDEFGH"], texts
+  assert page.locator("[data-page='chA'][data-modified]").count() == 1
+  assert page.locator("[data-testid=page-list] [data-modified]").count() == 1
+  assert page.locator("[data-testid=editor] .seg").count() == 1
+  seg = page.locator("[data-testid=editor] .seg").inner_text()
+  assert "Parameter" in seg and "Gruppenobjekte" in seg, seg
+  assert page.locator("[data-testid=editor] [role=tablist]").count() == 0
+  page.context.close()
+
+
+@test
+def test_changed_filter(ctx):
+  page = ctx.page()
+  page.click("[data-row='1.1.4']")
+  assert page.locator("[data-testid=filter-changed]").inner_text().strip() == "Geändert (3)"
+  page.click("[data-testid=filter-changed]")
+  assert page.locator("[data-testid=param-list] [data-param]").count() == 3
+  page.click("[data-testid=filter-all]")
+  total = page.locator("[data-testid=param-list] [data-param]").count()
+  page.fill("[data-testid=param-filter]", "Treppen")
+  texts = page.locator("[data-testid=param-list] [data-param]").all_inner_texts()
+  assert 1 <= len(texts) < total and all("Treppen" in t for t in texts), texts
+  page.context.close()
+
+
+@test
+def test_param_edit_pins_and_resets(ctx):
+  page = ctx.page()
+  page.click("[data-row='1.1.4']")
+  assert page.evaluate("XP.state.tabs.map(t => t.pinned)") == [False]
+  page.click("[data-page='chB']")
+  sel = page.locator("[data-testid=param-list] [data-param] select").first
+  sel.select_option("Öffner")
+  assert page.evaluate("XP.state.tabs.map(t => t.pinned)") == [True]
+  assert page.locator("[data-testid=filter-changed]").inner_text().strip() == "Geändert (4)"
+  assert page.locator("[data-page='chB'][data-modified]").count() == 1
+  page.click("[data-testid=param-list] [data-action=resetParam]")
+  assert page.locator("[data-testid=filter-changed]").inner_text().strip() == "Geändert (3)"
+  assert page.locator("[data-page='chB'][data-modified]").count() == 0
+  page.context.close()
+
+
+@test
+def test_first_edit_pins_every_kind(ctx):
+  pinned = "XP.state.tabs.map(t => t.pinned)"
+  page = ctx.page()  # reset
+  page.click("[data-row='1.1.4']")
+  page.click("[data-testid=param-list] [data-action=resetParam]")
+  assert page.evaluate(pinned) == [True], "reset"
+  page.context.close()
+  page = ctx.page()  # inspector change
+  open_objects(page)
+  assert page.evaluate(pinned) == [False]
+  page.click("[data-row='go1']")
+  page.select_option("[data-testid=insp-dpt]", "1.003")
+  assert page.evaluate(pinned) == [True], "inspector"
+  page.context.close()
+  page = ctx.page()  # rename
+  open_objects(page)
+  page.click("[data-row='go1']")
+  page.keyboard.press("F2")
+  page.fill("[data-testid=rename-input]", "Licht Decke")
+  page.keyboard.press("Enter")
+  assert page.evaluate(pinned) == [True], "rename"
+  assert "Licht Decke" in page.locator("[data-row='go1']").inner_text()
+  page.context.close()
+
+
+@test
+def test_wheel_does_not_change_value(ctx):
+  page = ctx.page()
+  page.click("[data-row='1.1.4']")
+  sel = page.locator("[data-testid=param-list] [data-param] select").first
+  before = sel.input_value()
+  sel.hover()
+  page.mouse.wheel(0, 120)
+  page.mouse.wheel(0, -240)
+  assert sel.input_value() == before
+  page.fill("[data-testid=param-filter]", "")
+  page.click("[data-page=general]")
+  num = page.locator("[data-testid=param-list] input[type=number]").first
+  num.focus()
+  v = num.input_value()
+  num.hover()
+  page.mouse.wheel(0, 120)
+  assert num.input_value() == v
+  page.context.close()
+
+
+@test
+def test_group_objects_rows_have_no_inputs(ctx):
+  page = ctx.page()
+  open_objects(page)
+  assert page.locator("table [data-row]").count() == 9
+  assert page.locator("table [data-row] :is(input,select,textarea,[contenteditable])").count() == 0
+  first = page.locator("table [data-row='go1']")
+  assert first.locator(".flags").inner_text().replace("\n", "").replace(" ", "") == "KLSÜA"
+  assert first.locator(".flags b").count() == 3
+  assert first.locator(".chip").inner_text().strip() == "1/2/3"
+  page.context.close()
+
+
+@test
+def test_multiselect_inspector(ctx):
+  page = ctx.page()
+  open_objects(page)
+  page.click("[data-row='go1']")
+  assert page.locator("[data-testid=inspector-title]").inner_text().strip() == "Kanal A Schalten"
+  page.click("[data-row='go4']", modifiers=["Control"])
+  assert page.locator("[data-testid=inspector-title]").inner_text().strip() == "2 Objekte"
+  page.select_option("[data-testid=insp-dpt]", "1.003")
+  for r in ("go1", "go4"):
+    assert page.locator(f"[data-row='{r}'] .typ").inner_text().strip() == "Freigeben", r
+  assert page.locator("[data-row='go7'] .typ").inner_text().strip() == "Schalten"
+  # shift range
+  page.click("[data-row='go1']")
+  page.click("[data-row='go7']", modifiers=["Shift"])
+  assert page.locator("[data-testid=inspector-title]").inner_text().strip() == "3 Objekte"
+  page.context.close()
+
+
+@test
+def test_context_menu_long_press(ctx):
+  page = ctx.page()
+  open_objects(page)
+  box = page.locator("[data-row='go1']").bounding_box()
+  x, y = box["x"] + 60, box["y"] + box["height"] / 2
+  page.mouse.move(x, y)
+  page.mouse.down()
+  page.wait_for_timeout(300)
+  assert page.locator("[data-testid=context-menu]").count() == 0
+  page.wait_for_timeout(350)
+  page.mouse.up()
+  menu = page.locator("[data-testid=context-menu]")
+  assert menu.is_visible()
+  assert "Verknüpfen…" in menu.inner_text()
+  assert menu.locator("button").count() >= 3
+  page.keyboard.press("Escape")
+  assert menu.count() == 0
+  page.click("[data-row='go4']", button="right")
+  assert menu.is_visible()
+  page.mouse.click(5, 400)  # outside
+  assert menu.count() == 0
+  # link dialog from the menu
+  page.click("[data-row='go4']", button="right")
+  page.click("[data-testid=context-menu] >> text=Verknüpfen…")
+  assert page.locator("[data-testid=dialog]").is_visible()
+  page.select_option("[data-testid=link-ga]", "1/2/7")
+  page.click("[data-testid=link-confirm]")
+  assert "1/2/7" in page.locator("[data-row='go4']").inner_text()
+  # device row menu
+  page.click("[data-row='1.1.12']", button="right")
+  assert "Anheften" in menu.inner_text()
+  page.keyboard.press("Escape")
+  page.context.close()
+
+
+@test
+def test_ga_tree(ctx):
+  page = ctx.page()
+  page.click("[data-view=groupAddresses]")
+  tree = page.locator("[data-testid=ga-tree]")
+  assert tree.locator("[data-level=main]").count() == 3
+  assert tree.locator(":is(input,select,textarea,[contenteditable])").count() == 0
+  assert tree.locator("[data-row='1/2/3']").count() == 1
+  page.click("[data-level=main][data-group='1']")
+  assert tree.locator("[data-row='1/2/3']").count() == 0
+  assert page.locator("[data-level=main][data-group='1']").get_attribute("aria-expanded") == "false"
+  page.click("[data-level=main][data-group='1']")
+  assert tree.locator("[data-row='1/2/3']").count() == 1
+  page.click("[data-row='1/2/3']")
+  assert page.evaluate("XP.state.activeTab") == "groupAddress:1/2/3"
+  links = page.locator("[data-testid=ga-links] tbody tr")
+  assert links.count() == 3, links.count()
+  txt = page.locator("[data-testid=ga-links]").inner_text()
+  assert "Kanal A Schalten" in txt and "Taste 1 Schalten" in txt
+  assert "Licht Küche" in page.locator("[data-testid=editor]").inner_text()
+  page.click("[data-testid=ga-links] [data-action=gotoGo] >> nth=0")
+  assert page.evaluate("XP.state.activeTab").startswith("device:")
+  page.context.close()
+
+
+@test
+def test_inspector_dock_and_sheet(ctx):
+  page = ctx.page()
+  open_objects(page)
+  box = page.locator("[data-testid=inspector]").bounding_box()
+  assert abs(box["width"] - 280) <= 1, box
+  page.click("[data-testid=view-menu-btn]")
+  page.click("[data-testid=toggle-inspector]")
+  assert page.locator("[data-testid=inspector]").count() == 0
+  page.click("[data-testid=view-menu-btn]")
+  page.click("[data-testid=toggle-inspector]")
+  assert page.locator("[data-testid=inspector]").is_visible()
+  page.context.close()
+  page = ctx.page(800, 1100)
+  page.click("[data-testid=list-button]")
+  page.click("[data-row='1.1.4']")
+  assert page.locator("[data-testid=inspector]").count() == 0
+  page.click("[data-testid=inspector-button]")
+  sheet = page.locator("[data-testid=inspector]")
+  assert sheet.is_visible()
+  b = sheet.bounding_box()
+  assert b["y"] > 300 and abs(b["y"] + b["height"] - 1100) <= 2, b  # bottom sheet
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=inspector]").count() == 0
+  page.click("[data-testid=view-menu-btn]")
+  page.click("[data-testid=toggle-inspector]")  # the menu entry drives the sheet
+  assert page.locator("[data-testid=inspector]").is_visible()
+  page.click("[data-testid=inspector-close]")
+  assert page.locator("[data-testid=inspector]").count() == 0
+  page.context.close()
+  page = ctx.page(400, 860)
+  page.click("[data-row='1.1.4']")
+  page.click("[data-testid=inspector-button]")
+  b = page.locator("[data-testid=inspector]").bounding_box()
+  assert b["width"] >= 399 and b["height"] >= 850, b  # full-screen sheet
+  assert page.evaluate("document.body.scrollWidth <= innerWidth")
+  page.click("[data-testid=inspector-close]")
+  assert page.locator("[data-testid=inspector]").count() == 0
+  page.context.close()
+
+
+@test
+def test_placeholder_views(ctx):
+  page = ctx.page()
+  for view in ("buildings", "busDiagram", "catalog", "health", "history"):
+    page.click(f"[data-view={view}]")
+    ph = page.locator("[data-testid=placeholder]")
+    assert ph.is_visible(), view
+    assert ph.locator(".t-title").inner_text().strip() == page.evaluate(f"XP.VIEWS.{view}.label")
+    assert ph.locator("[data-row]").count() == 0
+  page.context.close()
+
+
+@test
+def test_device_editor_long_names_narrow(ctx):
+  page = ctx.page(400, 860)
+  page.click("[data-row='1.2.9']")
+  assert page.evaluate("document.body.scrollWidth <= innerWidth")
+  page.click("[data-testid=mode-objects]")
+  assert page.evaluate("document.body.scrollWidth <= innerWidth")
   page.context.close()
 
 

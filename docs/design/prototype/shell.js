@@ -52,8 +52,8 @@
     var s = XP.state, wide = XP.formFactor() === "wide";
     return h`<div class="menu" role="menu" data-testid="view-menu">
       <button class="btn" role="menuitemcheckbox" aria-checked="${!s.hidden.list}" data-testid="toggle-list" data-action="toggleList" ${wide ? "" : "disabled"}><span class="ico">${s.hidden.list ? "" : "✓"}</span>Liste</button>
-      <button class="btn" role="menuitemcheckbox" aria-checked="${!s.hidden.inspector}" data-testid="toggle-inspector" data-action="toggleInspector" ${wide ? "" : "disabled"}><span class="ico">${s.hidden.inspector ? "" : "✓"}</span>Inspektor</button>
-      ${wide ? "" : h`<div class="t-caption menu-note">Liste und Inspektor erscheinen hier als Schublade bzw. Blatt.</div>`}
+      <button class="btn" role="menuitemcheckbox" aria-checked="${wide ? !s.hidden.inspector : s.inspectorOpen}" data-testid="toggle-inspector" data-action="toggleInspector"><span class="ico">${(wide ? !s.hidden.inspector : s.inspectorOpen) ? "✓" : ""}</span>Inspektor</button>
+      ${wide ? "" : h`<div class="t-caption menu-note">Die Liste erscheint hier als Schublade, der Inspektor als Blatt.</div>`}
       <div class="sep"></div>
       <button class="btn" role="menuitem" data-testid="save-workspace" data-action="openSaveWorkspace">Als Arbeitsbereich speichern…</button>
     </div>`;
@@ -77,6 +77,7 @@
 
   function list() {
     var s = XP.state, v = XP.VIEWS[s.view], f = XP.formFactor();
+    if (v && v.noList) return "";
     var inner = v && v.list ? v.list(s) : h`<div class="placeholder t-caption">${v ? v.label : s.view}: Liste folgt.</div>`;
     if (f === "wide") {
       if (s.hidden.list) return "";
@@ -91,8 +92,8 @@
   }
 
   function tabs() {
-    var s = XP.state, f = XP.formFactor();
-    var lead = f === "narrow" && s.stackEditor
+    var s = XP.state, f = XP.formFactor(), cv = XP.VIEWS[s.view], hasList = !(cv && cv.noList);
+    var lead = !hasList ? "" : f === "narrow" && s.stackEditor
       ? h`<button class="btn lead" data-testid="back" data-action="back" title="Zurück zur Liste">‹ Zurück</button>`
       : f === "tablet" ? h`<button class="btn lead" data-testid="list-button" data-action="drawer" aria-expanded="${s.drawerOpen}">Liste</button>` : "";
     return h`<div class="tabbar">${lead}<div class="tabs" data-testid="tabs" role="tablist" data-scroll="tabs">${s.tabs.map(function (t) {
@@ -108,7 +109,8 @@
     if (tab && XP.VIEWS[tab.kind] && XP.VIEWS[tab.kind].editor) inner = XP.VIEWS[tab.kind].editor(tab);
     else {
       var v = XP.VIEWS[s.view];
-      inner = h`<div class="empty" data-testid="editor-empty"><div class="t-title">${v ? v.label : s.view}</div><div>Wähle links einen Eintrag, um ihn hier zu öffnen.</div></div>`;
+      if (v && v.page) inner = v.page();
+      else inner = h`<div class="empty" data-testid="editor-empty"><div class="t-title">${v ? v.label : s.view}</div><div>Wähle links einen Eintrag, um ihn hier zu öffnen.</div></div>`;
     }
     return h`<section class="editor" data-testid="editor">${inner}</section>`;
   }
@@ -134,7 +136,8 @@
     root.dataset.theme = s.theme;
     var ff = XP.formFactor();
     root.dataset.ff = ff;
-    root.dataset.stack = s.stackEditor ? "editor" : "list";
+    var cv = XP.VIEWS[s.view];
+    root.dataset.stack = s.stackEditor || (cv && cv.noList) ? "editor" : "list";
     var touch = false;
     try { touch = matchMedia("(pointer:coarse)").matches; } catch (e) { /* ignore */ }
     if (touch) root.setAttribute("data-touch", ""); else root.removeAttribute("data-touch");
@@ -185,7 +188,11 @@
   XP.actions.railToggle = function () { XP.set({ railExpanded: !XP.state.railExpanded }); };
   XP.actions.wsMenu = function () { XP.set({ wsMenuOpen: !XP.state.wsMenuOpen, viewMenuOpen: false }); };
   XP.actions.palette = function () { XP.set({ paletteOpen: true }); };
-  XP.actions.view = function (el) { XP.set({ view: el.dataset.view, stackEditor: false, drawerOpen: false, navOpen: false }); };
+  XP.actions.view = function (el) {
+    var v = XP.VIEWS[el.dataset.view], patch = { view: el.dataset.view, stackEditor: false, drawerOpen: false, navOpen: false };
+    if (v && v.page) patch.activeTab = null;  /* a page view shows when no tab is active */
+    XP.set(patch);
+  };
   XP.actions.workspace = function (el) {
     var id = el.dataset.ws, w = XP.WORKSPACES[id], c = customWs(id);
     var patch = { workspace: id, view: w ? w.defaultView : c ? c.view : XP.state.view, wsMenuOpen: false, stackEditor: false, navOpen: false };

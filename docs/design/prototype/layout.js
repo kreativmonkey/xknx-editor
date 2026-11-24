@@ -51,7 +51,10 @@
 
   XP.actions.viewMenu = function () { XP.set({ viewMenuOpen: !XP.state.viewMenuOpen, wsMenuOpen: false }); };
   XP.actions.toggleList = function () { XP.set({ hidden: Object.assign({}, XP.state.hidden, { list: !XP.state.hidden.list }), viewMenuOpen: false }); };
-  XP.actions.toggleInspector = function () { XP.set({ hidden: Object.assign({}, XP.state.hidden, { inspector: !XP.state.hidden.inspector }), viewMenuOpen: false }); };
+  XP.actions.toggleInspector = function () {
+    if (XP.formFactor() === "wide") XP.set({ hidden: Object.assign({}, XP.state.hidden, { inspector: !XP.state.hidden.inspector }), viewMenuOpen: false });
+    else XP.set({ inspectorOpen: !XP.state.inspectorOpen, viewMenuOpen: false });
+  };
   XP.actions.openSaveWorkspace = function () {
     XP.set({ dialog: { kind: "saveWorkspace" }, viewMenuOpen: false });
     var i = document.getElementById("ws-name");
