@@ -4,26 +4,53 @@ Every pattern here is built **once** in `src/editor_gui/widgets/`, takes
 its values from `widgets/tokens.py`, and gets a headless imgui test. Panels compose
 these patterns. They do not restyle them.
 
-## Panel anatomy (work surface)
+## View anatomy inside the shell (work surface)
+
+A sidebar entry opens a **view** in the main area of the shell (see *App shell*). Two kinds:
+
+- **Object view** (Devices, Group Addresses, Buildings): the list column shows the objects,
+  the main area shows the editor tabs. The view has no title of its own: the sidebar row and
+  the tab name it.
+- **Full-width view** (Group Monitor, Settings, Project Info, Export): no list column; the
+  view fills the main area:
 
 ```
-┌ dock tab: "Group Addresses" ───────────────────────────┐
-│ [filter_box ............]   [+ Add]  [⋯]               │  toolbar: 1 row, space(2) gaps,
-│────────────────────────────────────────────────────────│  wraps with same_line_if_fits
-│ content (tree / table), fills the panel, own scroll    │
-│                                                        │
+┌ main area ─────────────────────────────────────────────┐
+│ Group Monitor          1 234 telegrams  [Pause]  [⋯]   │  view bar: heading + caption + actions
+│ [GA ……] [value ……] [Read] [Write]                      │  optional command bar (inputs allowed)
 │────────────────────────────────────────────────────────│
-│ 1 234 group addresses · 3 selected              caption│  optional footer, text.secondary
+│ content (table / tree), fills the area, own scroll     │
+│────────────────────────────────────────────────────────│
+│ 3 selected                                      caption│  optional footer, text.secondary
 └────────────────────────────────────────────────────────┘
 ```
 
-- There is no title inside a docked panel, because the dock tab already names it.
-- The toolbar sits on top: the filter on the left, actions on the right (and below the filter when narrow).
-  The primary action is a labelled button. The rest goes into an overflow "⋯" menu that also opens
-  by long press.
+- Toolbar or view bar on top: the filter on the left, actions on the right (and below the filter
+  when narrow). The primary action is a labelled button. The rest goes into an overflow "⋯"
+  menu that also opens by long press.
+- **Inputs:** the rule is "no inputs in list **rows**". A toolbar or command bar above a list may
+  hold inputs (filter, the monitor's group address + value + Read/Write). Per-record actions
+  go to the inspector and the context menu, never into the row.
 - Content scrolls on its own. Toolbar and footer stay fixed.
 - Selection, the context menu and double-click must do the same on touch (long press = right
   click, tap = select, a visible "Open" action for double-click).
+- Docking stays for rearranging: the user can move, dock or hide the list, editor, inspector
+  and views (hello_imgui). A docked panel's tab then names it; still no title inside.
+
+## Live data streams (monitor, logger, bus activity)
+
+Telegrams, log lines and bus events are transient records, not project objects:
+
+- **No preview tabs.** A record never opens as a tab; the view is full-width with an inspector.
+- Clicking a row selects it, **freezes auto-scroll** and shows the record in the inspector
+  (raw bytes in `mono`, decoded value, source, links to the group address/device, which do
+  open tabs).
+- The frozen state is visible: a "Live ▸" / "Paused" status in the view bar plus a button to
+  resume (also Esc or "Scroll to Newest"). The pause is a view state, not a status color: no blinking.
+- New records keep arriving into the buffer while paused; a caption counts them
+  ("12 new"). Pausing the *recording* is a separate, labelled action.
+- 1 000+ rows: clipped rendering, fixed row height, cap the buffer with a visible note
+  ("Keeping the last 10 000 telegrams").
 
 ## States (each panel shows each one)
 
@@ -201,7 +228,10 @@ For lists inside an editor (Group Objects, linked objects):
 - Use it for a filter or a view toggle with 2–4 options that are always visible.
   The count is part of the label ("Changed (3)"); "Changed (0)" stays visible and selectable,
   and shows the filtered-to-nothing state.
-- Not for actions, and only one per editor header.
+- Not for actions. Two levels, never mixed up: the **editor-level toggle** (at most one, under the
+  editor header: "Parameters | Group Objects") switches what the editor shows; a **filter**
+  segmented control ("All | Changed (n)") sits in the content's toolbar row next to the
+  parameter filter field and only narrows the list. A filter is not a second toggle.
 
 ## Guided flow / stepper
 

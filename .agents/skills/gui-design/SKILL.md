@@ -37,14 +37,12 @@ These blocks may be restyled or replaced as well.
 
 ## The reference: spec and prototype
 
-- **Spec:** `docs/superpowers/specs/2026-11-24-gui-redesign-design.md` (shell, workspaces,
-  lists, flows, and why).
+- **Spec:** `docs/superpowers/specs/2026-11-24-gui-redesign-design.md` (the why).
 - **Prototype:** open `docs/design/prototype/index.html` (double-click, works from `file://`;
   `?fast=1` shortens simulations). It is the **visual reference**: when it and this skill
-  disagree, the prototype wins; fix the skill in the same change. Its `tokens.css` mirrors
-  [design-system.md](design-system.md), and `app.css` shows each pattern of
-  [components.md](components.md) in a working layout. German demo texts there; the program's
-  English texts follow AGENTS.md.
+  disagree, the prototype wins; fix the skill in the same change. `tokens.css` mirrors
+  design-system.md; `app.css` shows the components.md patterns. Its German demo texts are
+  not msgids; the program's texts follow AGENTS.md.
 
 ## Target design: workspaces and the shell
 
@@ -57,10 +55,11 @@ Settled by the redesign (details and drawings in [components.md](components.md))
    switcher, ⌘K search and the connection status pill. The sidebar collapses to icons.
    A single click in the list opens a **preview tab** (italic, replaced by the next click);
    double-click, Enter or the first edit keeps it. "Detail" is the active tab, not a panel.
-3. **Flat structure.** At most **one toggle** above an editor's content
-   ("Parameters | Group Objects"); no tabs inside tabs. Parameter pages are a page list.
+3. **Flat structure.** At most **one toggle** under the editor header ("Parameters | Group
+   Objects"); no tabs inside tabs. Pages go into a page list. A filter such as "All | Changed (n)"
+   sits in the content's toolbar row and is not a toggle.
 4. **Overview + detail** (provisional rule). List rows hold text, compact symbols and
-   badges, never input fields. Click selects, double-click/Enter opens, a multi-selection
+   badges, never input fields (toolbars above a list may hold inputs). Click selects, double-click/Enter opens, a multi-selection
    is edited in the detail or the inspector. Rename in the detail or with F2.
 5. **No locks.** Editing works in every workspace. Safety comes from rule 4 and from
    workspaces that do not put editors up front.
@@ -71,9 +70,8 @@ Settled by the redesign (details and drawings in [components.md](components.md))
 
 ## Density: hybrid by context
 
-The editor is a professional engineering tool that people use for hours on
-large projects. It is also used by newcomers, on tablets and through the
-browser. So the density depends on the surface:
+A pro tool used for hours on large projects, but also by newcomers, on tablets and in
+the browser. So the density depends on the surface:
 
 | Surface type | Examples | Density | Character |
 |---|---|---|---|
@@ -105,7 +103,7 @@ digraph flow {
   t [label="Tokens in\nwidgets/tokens.py?" shape=diamond];
   build [label="Phase 1:\nbuild tokens +\ntheme + guard test"];
   c [label="Shared component\nexists?" shape=diamond];
-  comp [label="Phase 2:\nbuild/restyle it\nin widgets/"];
+  comp [label="Phase 2:\nshell, then the\ncomponent in widgets/"];
   p [label="Phase 3:\nmigrate the panel"];
   t -> build [label="no"]; build -> c;
   t -> c [label="yes"]; c -> comp [label="no"]; comp -> p;
@@ -114,19 +112,20 @@ digraph flow {
 ```
 
 **If `widgets/tokens.py` does not exist yet** and the user asks for a panel
-redesign: tell the user that Phase 1 comes first, propose it as its own change, and
-start there. Do not bridge the gap with local constants or helpers in the panel.
+redesign: propose Phase 1 as its own change and **ask the user**. Only the user can
+approve piloting one panel together with Phase 1. Never bridge the gap with local
+constants or helpers in the panel.
 
 **Phase 1 — Tokens and theme** (once, before any panel work):
 build the token module and the custom light/dark theme exactly as specified in
 [design-system.md](design-system.md). Do this in its own change, and add the guard test
 it describes. Also add the screenshot command (see *Verification*).
 
-**Phase 2 — Components:** build each pattern from [components.md](components.md)
-as a shared widget under `src/editor_gui/widgets/` before a panel uses it.
-Most of them (app shell, preview tabs, page list, segmented control, stepper,
-queue row, badge, banner, empty state) do not exist yet. components.md is the target, not an inventory. Each widget gets
-a headless imgui test. Draw-list painting is fine **inside `widgets/`**.
+**Phase 2 — Shell and components:** first the shell (top bar, view sidebar, list
+column, editor tabs with preview tabs, workspaces as saved hello_imgui layouts), then each
+pattern of [components.md](components.md) as a shared widget under `src/editor_gui/widgets/`
+before a panel uses it. components.md is the target, not an inventory: most patterns do not
+exist yet. Each widget gets a headless imgui test. Draw-list painting is fine **inside `widgets/`**.
 
 **Phase 3 — Panels:** migrate one panel (or one plugin) per change. Do not
 mix a redesign with feature or behaviour changes.
@@ -198,4 +197,5 @@ A design change is not done until you have **seen** it.
 | add a lock / "Edit" mode to protect data | no locks: move the editor out of the workspace instead |
 | make text smaller to fit more in | hide what the workspace does not need |
 | open every list click in a new tab | preview tab; it becomes a normal tab on double-click/Enter/edit |
+| open a telegram or log line as a tab | live streams: select, freeze auto-scroll, inspector (components.md) |
 | follow this text where the prototype shows otherwise | follow the prototype, then fix the skill |

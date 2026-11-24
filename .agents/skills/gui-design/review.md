@@ -78,6 +78,7 @@ modules in `tests/test_app_widgets.py`) are debt, not exceptions:
 
 - Every entry names a **reason** (and ideally the migration that removes it) next to it.
   An entry without a reason is a P2 finding.
-- The guard test reports **stale** entries: an allowlisted file or line that no longer
-  offends fails the test until the entry is removed, so the list only shrinks.
+- **Requirement for the Phase 1 guard test** (not yet built): it must report **stale** entries,
+  i.e. an allowlisted file or line that no longer offends fails the test until the entry is
+  removed, so the list only shrinks. Until then, check stale entries by hand in the review.
 - A review lists the waivers the change added or kept, with their reasons.
