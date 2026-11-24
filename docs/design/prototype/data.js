@@ -60,6 +60,19 @@
   byAddr("1.1.5").channels = generic(["Ausgang A", "Ausgang B", "Ausgang C", "Ausgang D"]);
   byAddr("1.1.12").groupObjects = [go(1, "Taste 1 Schalten", "1.001", "K-S--", ["1/2/3"]), go(2, "Taste 2 Schalten", "1.001", "K-S--", ["1/2/2"])];
   byAddr("1.1.3").groupObjects = [go(1, "Kanal A Schalten", "1.001", "KS-Ü", ["1/2/2"]), go(2, "Kanal A Dimmwert", "5.001", "K-S--", ["1/2/7"])];
+  var gen = function (a, list) { byAddr(a).groupObjects = list; };
+  gen("1.1.1", [go(1, "Status Busspannung", "1.001", "K-S--", ["1/1/3"])]);
+  gen("1.1.2", [go(1, "Zeit Senden", "10.001", "K-S--", [])]);
+  gen("1.1.6", [go(1, "Taste 1 Schalten", "1.001", "K-S--", ["1/2/2"]), go(2, "Temperatur Eingang", "9.001", "K-S--", ["3/1/2"])]);
+  gen("1.1.7", [go(1, "Taste 1 Schalten", "1.001", "K-S--", ["1/2/3"])]);
+  gen("1.1.8", [go(1, "Eingang 1 Schalten", "1.001", "K-S--", ["1/1/2"]), go(2, "Eingang 2 Schalten", "1.001", "K-S--", ["1/1/1"])]);
+  gen("1.2.2", [go(1, "Ist-Temperatur", "9.001", "K-S-T", ["3/1/6"]), go(2, "Soll-Temperatur", "9.001", "KS-Ü", ["3/2/6"])]);
+  gen("1.2.7", [go(1, "Präsenz", "1.001", "K-S--", ["1/2/4"]), go(2, "Helligkeit", "9.004", "K-S--", [])]);
+  gen("1.2.8", [go(1, "Außentemperatur", "9.001", "K-S--", ["3/1/7"]), go(2, "Windgeschwindigkeit", "9.005", "K-S--", [])]);
+  gen("1.2.9", [go(1, "Ausgang 1 Schalten", "1.001", "KS-Ü", ["1/2/8"])]);
+  byAddr("1.2.7").channels[0].params[1].value = "Erweitert"; byAddr("1.2.7").channels[0].params[1].changed = true;
+  byAddr("1.1.3").channels[0].params[0].value = "Erweitert"; byAddr("1.1.3").channels[0].params[0].changed = true;
+  byAddr("1.1.5").channels[0].params[0].value = "Erweitert"; byAddr("1.1.5").channels[0].params[0].changed = true;
   byAddr("1.2.1").groupObjects = [go(1, "Stellwert Kanal 1", "5.001", "KS-Ü", ["3/2/1"])];
 
   /* Group addresses: 3 main groups, 6 middle groups. */
@@ -81,6 +94,7 @@
   add("2/2", "2/2", function (r) { return "Jalousie " + r + " Position"; }, "5.001", 6);
   add("3/1", "3/1", function (r) { return "Temperatur " + r; }, "9.001", 8);
   add("3/2", "3/2", function (r) { return "Solltemperatur " + r; }, "9.001", 8);
+  ga.push({ id: "1/1/4", address: "1/1/4", group: "1/1", name: "Zentral Dimmen", dpt: "3.007" });
   ga.forEach(function (g) { g.group = g.id.split("/").slice(0, 2).join("/"); });
 
   /* 30 monitor telegrams. */
