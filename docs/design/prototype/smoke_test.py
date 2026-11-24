@@ -506,6 +506,29 @@ def test_first_edit_pins_every_kind(ctx):
 
 
 @test
+def test_first_edit_pins_flag_and_link(ctx):
+  pinned = "XP.state.tabs.map(t => t.pinned)"
+  page = ctx.page()  # flag toggle
+  open_objects(page)
+  page.click("[data-row='go1']")
+  assert page.evaluate(pinned) == [False]
+  page.click("[data-testid=inspector] [data-action=toggleFlag][data-flag='1']")
+  assert page.evaluate(pinned) == [True], "flag toggle"
+  assert "L" in page.evaluate("XP.data.devices.find(d => d.address === '1.1.4').groupObjects[0].flags")
+  page.context.close()
+  page = ctx.page()  # link dialog
+  open_objects(page)
+  page.click("[data-row='go4']")
+  assert page.evaluate(pinned) == [False]
+  page.click("[data-testid=insp-link]")
+  assert page.evaluate(pinned) == [False], "opening the dialog is no edit"
+  page.select_option("[data-testid=link-ga]", "1/2/7")
+  page.click("[data-testid=link-confirm]")
+  assert page.evaluate(pinned) == [True], "link"
+  page.context.close()
+
+
+@test
 def test_wheel_does_not_change_value(ctx):
   page = ctx.page()
   page.click("[data-row='1.1.4']")
@@ -617,6 +640,20 @@ def test_ga_tree(ctx):
   page.click("[data-testid=ga-links] [data-action=gotoGo] >> nth=0")
   assert page.evaluate("XP.state.activeTab").startswith("device:")
   page.context.close()
+  for w, h in ((1280, 800), (400, 860)):
+    page = ctx.page(w, h)
+    if w < 600:
+      page.click("[data-testid=nav-button]")
+    page.click("[data-view=groupAddresses]")
+    heights = page.evaluate(
+      "[...document.querySelectorAll('[data-testid=ga-tree] .grow, [data-testid=ga-tree] .row')].map(e => Math.round(e.getBoundingClientRect().height))"
+    )
+    assert len(set(heights)) == 1 and heights[0] > 0, (w, sorted(set(heights)))
+    mains = page.locator("[data-testid=ga-tree] [data-level=main]")
+    assert mains.count() == 3
+    for i in range(3):
+      assert mains.nth(i).is_visible(), (w, i)
+    page.context.close()
 
 
 @test
