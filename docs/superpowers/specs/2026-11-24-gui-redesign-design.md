@@ -118,6 +118,13 @@ takes them over.
 - Renaming happens in the detail area or with F2. Nothing is edited inline.
 - **Provisional:** check whether this rule is too strict once the prototype exists.
 
+- **Device list grouping:** a segmented switch "Topologie | Gebäude" in the list toolbar groups the same
+  rows by area/line or by building, floor and room (no room: "Ohne Raum"). The choice persists.
+- **Group address view:** the list toolbar has a filter (address and name; parents of matches stay
+  open) and "+ Neu ▾" (main group, middle group, address). A main or middle group opens a detail
+  pane (range, counts, create, rename, delete with the number of removed addresses). The same
+  entries are in the tree's context menu; names of all levels are renamed with F2.
+
 ### Workspaces
 | Workspace | Sidebar | List shows | Main action / focus | Hidden |
 |---|---|---|---|---|

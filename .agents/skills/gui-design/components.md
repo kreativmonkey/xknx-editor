@@ -159,6 +159,13 @@ Settings is a guided surface: comfortable density (≈ 32 px controls), `space(8
 - The row shows icon (`text.secondary`), name (`body`) and trailing metadata (`caption`,
   `text.secondary`, right-aligned when there is room, hidden when narrow).
 - Selection and hover match the tables. Drag & drop shows an `accent` insertion line.
+- **Creating items in a tree:** a toolbar button "+ Neu ▾" (menu: one entry per level), the same
+  entries in the context menu (context-aware: on a group, the next level in it), and buttons in the
+  group's detail pane. One dialog: name plus number pre-filled with the next free number, inline
+  error and a disabled primary when the number is in use or out of range; the primary names the
+  result ("Gruppenadresse 1/2/9 anlegen"). The new item is selected. Every level can be renamed
+  (context menu, F2, detail pane); deleting says how many children go with it.
+- A row click selects (and opens the detail); only the chevron, Left and Right expand or collapse.
 
 ## Selection marker
 
