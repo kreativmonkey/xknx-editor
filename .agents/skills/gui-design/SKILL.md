@@ -58,9 +58,11 @@ Settled by the redesign (details and drawings in [components.md](components.md))
 3. **Flat structure.** At most **one toggle** under the editor header ("Parameters | Group
    Objects"); no tabs inside tabs. Pages go into a page list. A filter such as "All | Changed (n)"
    sits in the content's toolbar row and is not a toggle.
-4. **Overview + detail** (provisional rule). List rows hold text, compact symbols and
-   badges, never input fields (toolbars above a list may hold inputs). Click selects, double-click/Enter opens, a multi-selection
-   is edited in the detail or the inspector. Rename in the detail or with F2.
+4. **Overview + detail.** List rows hold text, compact symbols and
+   badges, never a persistent input field (toolbars above a list may hold inputs). Click selects, double-click/Enter opens, a multi-selection
+   is edited in the detail or the inspector. One decided exception: the **name** may be renamed inline,
+   only after an explicit gesture (double-click on the name, F2, or the visible "✎" next to the detail
+   title); Enter commits, Escape cancels, blur commits a change. Everything else is edited in the detail.
 5. **No locks.** Editing works in every workspace. Safety comes from rule 4 and from
    workspaces that do not put editors up front.
 6. **Hide, don't shrink.** Information the workspace does not need is hidden (one step

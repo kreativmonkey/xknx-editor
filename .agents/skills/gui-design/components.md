@@ -29,7 +29,9 @@ A sidebar entry opens a **view** in the main area of the shell (see *App shell*)
   1 234 telegrams" or "1 running · 2 waiting") on the left, actions on the right (and below the
   filter when narrow). It never repeats the view's name. The primary action is a labelled
   button. The rest goes into an overflow "⋯" menu that also opens by long press.
-- **Inputs:** the rule is "no inputs in list **rows**". A toolbar or command bar above a list may
+- **Inputs:** the rule is "no *persistent* inputs in list **rows**" (exception: inline rename of the
+  name after double-click or F2, see the Lists rule; a "✎" button next to the detail title makes it
+  discoverable and touch-usable). A toolbar or command bar above a list may
   hold inputs (filter, the monitor's group address + value + Read/Write). Per-record actions
   go to the inspector and the context menu, never into the row.
 - Content scrolls on its own. Toolbar and footer stay fixed.
@@ -84,7 +86,8 @@ Telegrams, log lines and bus events are transient records, not project objects:
 - Compact rows, no zebra stripes, horizontal `border.subtle` lines only, row hover
   `bg.hover`, selection `bg.selected` + a 2 px marker at the left edge (see *Selection marker*).
 - Cells are read-only (overview + detail): text, letters for flags (mono), addresses as chips,
-  the type as a name, badges. No input fields, combos or checkboxes in a row.
+  the type as a name, badges. No input fields, combos or checkboxes in a row, except the name
+  input that appears for an inline rename and goes away on Enter, Escape or blur.
 - A cue that is a symbol or letter gets a visible legend under the table (`caption`), e.g.
   "→ sending group address · Flags: C Communication, R Read, …". The sending address chip
   has an `accent.marker` edge **and** the "→" (`accent.link`), never the colour alone.
@@ -164,7 +167,8 @@ Settings is a guided surface: comfortable density (≈ 32 px controls), `space(8
   group's detail pane. One dialog: name plus number pre-filled with the next free number, inline
   error and a disabled primary when the number is in use or out of range; the primary names the
   result ("Gruppenadresse 1/2/9 anlegen"). The new item is selected. Every level can be renamed
-  (context menu, F2, detail pane); deleting says how many children go with it.
+  inline (double-click on the name, F2, "✎" in the detail title, context menu); a group address
+  changes its address in the detail's "Address" field with live validation; deleting says how many children go with it.
 - A row click selects (and opens the detail); only the chevron, Left and Right expand or collapse.
 
 ## Selection marker

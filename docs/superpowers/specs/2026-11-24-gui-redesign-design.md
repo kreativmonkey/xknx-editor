@@ -109,21 +109,32 @@ takes them over.
   front. (The "🔒 Bearbeiten" button in the early mockups is dropped.)
 - The mouse wheel never changes values in fields while scrolling.
 
-### Lists: overview + detail (provisional rule)
-- List rows contain **no input fields**, only text, compact symbols
+### Lists: overview + detail
+- List rows contain **no persistent input fields**, only text, compact symbols
   (flags as letters, addresses as chips, the type as a name instead of a number) and badges.
 - Click selects. Double-click/Enter opens the detail. Multi-select is edited together in the
   detail area.
 - Quick actions (link, copy, go to …) are in the context menu / behind a long press.
-- Renaming happens in the detail area or with F2. Nothing is edited inline.
-- **Provisional:** check whether this rule is too strict once the prototype exists.
+- **Decided exception: inline rename of the name only.** It starts only after an explicit gesture:
+  double-click on the name (list row or detail title), F2, the visible "✎" button next to the
+  detail title, or "Rename…" in the context menu (which edits the detail title; touch users
+  rename this way, a long press still opens the context menu). The input sits in place of the
+  name (token styling, `border.control`), the name is selected. Enter commits, Escape cancels,
+  leaving the field commits a changed name and cancels an unchanged one. An empty name is
+  rejected with an inline error and the old name stays. Renaming is an edit, so it pins the
+  preview tab (a double-click pins anyway). All other values are still edited in the detail.
+- **Changing a group address** (main/middle/address) is a detail field, not a row edit: the
+  "Address" section shows the address and "Change…", which turns into an input with live
+  validation (format, ranges 0–31/0–7/0–255, already in use). The primary stays disabled while
+  invalid; when the middle group is missing it reads "Create middle group 2/5 and move". Applying
+  re-sorts the tree, keeps every group object link and selects and pins the address.
 
 - **Device list grouping:** a segmented switch "Topologie | Gebäude" in the list toolbar groups the same
   rows by area/line or by building, floor and room (no room: "Ohne Raum"). The choice persists.
 - **Group address view:** the list toolbar has a filter (address and name; parents of matches stay
   open) and "+ Neu ▾" (main group, middle group, address). A main or middle group opens a detail
   pane (range, counts, create, rename, delete with the number of removed addresses). The same
-  entries are in the tree's context menu; names of all levels are renamed with F2.
+  entries are in the tree's context menu; names of all levels are renamed inline (double-click, F2, ✎).
 
 ### Workspaces
 | Workspace | Sidebar | List shows | Main action / focus | Hidden |
