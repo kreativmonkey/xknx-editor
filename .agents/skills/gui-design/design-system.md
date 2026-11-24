@@ -88,20 +88,22 @@ Starting values. Verify contrast after every change.
 | `bg.raised` | `#393B40` | `#FFFFFF` | popups, menus, dialogs (+ border) |
 | `bg.inset` | `#232427` | `#F2F3F5` | input fields, code/hex areas |
 | `bg.hover` | `#FFFFFF0F` | `#0000000A` | row/control hover overlay |
-| `bg.selected` | `#2E436E` | `#D4E2FF` | selected rows |
+| `bg.selected` | `#253658` | `#DCE7FF` | selected rows |
 | `border.subtle` | `#393B40` | `#EBECF0` | dividers, table lines |
 | `border.strong` | `#4E5157` | `#C9CCD6` | dialog and popup edges |
 | `border.control` | `#777B83` | `#878B98` | outlines of inputs, selects, checkboxes, toggles, segmented controls (≥ 3:1 on `bg.surface` and `bg.inset`) |
 | `text.primary` | `#DFE1E5` | `#1E1F22` | body |
-| `text.secondary` | `#9DA0A8` | `#686C79` | metadata, hints, captions |
+| `text.secondary` | `#A5A8B0` | `#64666D` | metadata, hints, captions |
 | `text.disabled` | `#6F737A` | `#A8ADBD` | disabled |
 | `accent` | `#3370E8` | `#3370E8` | primary button, focus ring, links, selection marker |
 | `accent.hover` | `#2B62D3` | `#2E5FC9` | |
 | `accent.text` | `#FFFFFF` | `#FFFFFF` | text on accent |
+| `accent.link` | `#93B3F3` | `#2B5EC3` | accent as text (links, selected menu item); ≥ 4.5:1 on surface, raised, inset, selected |
 | `status.success` | `#5FB865` | `#1F843A` | ok / programmed / connected |
 | `status.warning` | `#E5A63B` | `#A76400` | needs attention |
 | `status.error` | `#F86775` | `#D1293D` | failed / invalid |
 | `status.info` | `#6395F8` | `#3370E8` | neutral notices |
+| `status.*.text` | success `#79C37E`, warning `#E5A73D`, error `#FA96A0`, info `#8FB3FA` | `#1B7232`, `#8E5500`, `#BC2537`, `#2B5EC3` | status as text, also on `status.*.subtle`; `status.*` itself stays for dots and icons |
 | `status.*.subtle` | 15 % of the status color on `bg.surface` | 10 % | background of banners/badges |
 
 `theme.status_color(kind)` stays as a thin wrapper over `color("status.<kind>")`

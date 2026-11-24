@@ -43,26 +43,36 @@ def main():
   bad = 0
   for theme in ("dark", "light"):
     t = block(theme)
-    pairs = [("text-primary on surface", "text-primary", "bg-surface", 4.5),
-             ("text-primary on canvas", "text-primary", "bg-canvas", 4.5),
-             ("text-primary on selected", "text-primary", "bg-selected", 4.5),
-             ("text-secondary on surface", "text-secondary", "bg-surface", 4.5),
-             ("text-secondary on canvas", "text-secondary", "bg-canvas", 4.5),
-             ("text-secondary on inset", "text-secondary", "bg-inset", 4.5),
-             ("accent-text on accent", "accent-text", "accent", 4.5),
-             ("accent-text on accent-hover", "accent-text", "accent-hover", 4.5),
-             ("accent on surface (text/UI)", "accent", "bg-surface", 3.0),
-             ("border-control on surface (UI)", "border-control", "bg-surface", 3.0),
-             ("border-control on inset (UI)", "border-control", "bg-inset", 3.0),
-             ("border-strong (dialog edge, decor.)", "border-strong", "bg-surface", 0)]
+    pairs = []
+    surf = ("bg-surface", "bg-raised", "bg-inset", "bg-selected")
+    for bg in ("bg-surface", "bg-canvas", "bg-inset", "bg-selected"):
+      pairs.append((f"text-primary on {bg}", "text-primary", bg, 4.5))
+    for bg in ("bg-surface", "bg-canvas", "bg-raised", "bg-inset", "bg-selected"):
+      pairs.append((f"text-secondary on {bg}", "text-secondary", bg, 4.5))
+    pairs += [("accent-text on accent", "accent-text", "accent", 4.5),
+              ("accent-text on accent-hover", "accent-text", "accent-hover", 4.5),
+              ("accent on surface (UI)", "accent", "bg-surface", 3.0),
+              ("border-control on surface (UI)", "border-control", "bg-surface", 3.0),
+              ("border-control on inset (UI)", "border-control", "bg-inset", 3.0),
+              ("border-strong (dialog edge, decor.)", "border-strong", "bg-surface", 0.0)]
+    for bg in surf:
+      pairs.append((f"accent-link on {bg}", "accent-link", bg, 4.5))
     for s in ("success", "warning", "error", "info"):
-      pairs.append((f"status-{s} on surface", f"status-{s}", "bg-surface", 4.5))
+      pairs.append((f"status-{s} dot on surface (UI)", f"status-{s}", "bg-surface", 3.0))
+      for bg in surf:
+        pairs.append((f"status-{s}-text on {bg}", f"status-{s}-text", bg, 4.5))
     print(f"[{theme}]")
     for name, fg, bg, need in pairs:
       r = ratio(rgb(t[fg]), rgb(t[bg]))
       ok = r >= need
       bad += not ok
       print(f"  {name:34s} {r:5.2f}  need {need}  {'ok' if ok else 'FAIL'}")
+    for s in ("success", "warning", "error", "info"):
+      pct = 0.15 if theme == "dark" else 0.10
+      fill = tuple(rgb(t[f"status-{s}"])[i] * pct + rgb(t["bg-surface"])[i] * (1 - pct) for i in range(3))
+      r = ratio(rgb(t[f"status-{s}-text"]), fill)
+      bad += r < 4.5
+      print(f"  {f'status-{s}-text on subtle':34s} {r:5.2f}  need 4.5  {'ok' if r >= 4.5 else 'FAIL'}")
     hov = over(t["bg-hover"], t["bg-surface"])
     r = ratio(rgb(t["text-primary"]), hov)
     print(f"  {'text-primary on hover':34s} {r:5.2f}  need 4.5  {'ok' if r >= 4.5 else 'FAIL'}")

@@ -27,10 +27,11 @@
 :root[data-theme=dark]{
   color-scheme:dark;
   --bg-canvas:#1E1F22;--bg-surface:#2B2D30;--bg-raised:#393B40;--bg-inset:#232427;
-  --bg-hover:#FFFFFF0F;--bg-selected:#2E436E;
+  --bg-hover:#FFFFFF0F;--bg-selected:#253658;
   --border-subtle:#393B40;--border-strong:#4E5157;--border-control:#777B83;
-  --text-primary:#DFE1E5;--text-secondary:#9DA0A8;--text-disabled:#6F737A;
-  --accent:#3370E8;--accent-hover:#2B62D3;--accent-text:#FFFFFF;
+  --text-primary:#DFE1E5;--text-secondary:#A5A8B0;--text-disabled:#6F737A;
+  --accent:#3370E8;--accent-hover:#2B62D3;--accent-text:#FFFFFF;--accent-link:#93B3F3;
+  --status-success-text:#79C37E;--status-warning-text:#E5A73D;--status-error-text:#FA96A0;--status-info-text:#8FB3FA;
   --status-success:#5FB865;--status-warning:#E5A63B;--status-error:#F86775;--status-info:#6395F8;
   --status-success-subtle:color-mix(in srgb,var(--status-success) 15%,var(--bg-surface));
   --status-warning-subtle:color-mix(in srgb,var(--status-warning) 15%,var(--bg-surface));
@@ -40,10 +41,11 @@
 :root[data-theme=light]{
   color-scheme:light;
   --bg-canvas:#F7F8FA;--bg-surface:#FFFFFF;--bg-raised:#FFFFFF;--bg-inset:#F2F3F5;
-  --bg-hover:#0000000A;--bg-selected:#D4E2FF;
+  --bg-hover:#0000000A;--bg-selected:#DCE7FF;
   --border-subtle:#EBECF0;--border-strong:#C9CCD6;--border-control:#878B98;
-  --text-primary:#1E1F22;--text-secondary:#686C79;--text-disabled:#A8ADBD;
-  --accent:#3370E8;--accent-hover:#2E5FC9;--accent-text:#FFFFFF;
+  --text-primary:#1E1F22;--text-secondary:#64666D;--text-disabled:#A8ADBD;
+  --accent:#3370E8;--accent-hover:#2E5FC9;--accent-text:#FFFFFF;--accent-link:#2B5EC3;
+  --status-success-text:#1B7232;--status-warning-text:#8E5500;--status-error-text:#BC2537;--status-info-text:#2B5EC3;
   --status-success:#1F843A;--status-warning:#A76400;--status-error:#D1293D;--status-info:#3370E8;
   --status-success-subtle:color-mix(in srgb,var(--status-success) 10%,var(--bg-surface));
   --status-warning-subtle:color-mix(in srgb,var(--status-warning) 10%,var(--bg-surface));
