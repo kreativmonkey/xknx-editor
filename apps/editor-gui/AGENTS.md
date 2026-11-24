@@ -5,6 +5,8 @@
 Before making changes, read these docs:
 - `docs/architecture.md` - Template/instance pattern, data flow, key principles
 
+For any visual or UX work (restyling, layout, theme, colors, fonts, icons, a new panel or dialog), follow the skill `.agents/skills/gui-design/`: the current look is being overhauled, so take values from its design system, not from neighbouring code.
+
 ## Commands
 
 - Run tests: `uv run pytest apps/editor-gui` (most plugins keep their tests in `plugins/<name>/tests`; root `uv run pytest` covers the whole workspace)
