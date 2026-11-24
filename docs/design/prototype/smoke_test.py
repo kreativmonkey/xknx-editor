@@ -32,6 +32,13 @@ SCREENSHOT_VIEWS = [
   ("devices-building", lambda page: page.evaluate("XP.set({deviceGrouping:'building'}); XP.openObject('device','1.1.4',{pin:true})")),
   ("groupAddresses", lambda page: page.evaluate("XP.set({view:'groupAddresses'}); XP.openObject('groupAddress','1/2/3',{pin:true})")),
   ("groupAddresses-group", lambda page: page.evaluate("XP.set({view:'groupAddresses'}); XP.openObject('gaGroup','1',{pin:true})")),
+  ("inlineRename", lambda page: page.evaluate(
+    "XP.set({view:'groupAddresses'}); XP.openObject('groupAddress','1/2/3',{pin:true}); XP.renameInline('groupAddress','1/2/3','row')")),
+  ("inlineRenameTitle", lambda page: page.evaluate(
+    "XP.set({view:'groupAddresses'}); XP.openObject('groupAddress','1/2/3',{pin:true}); XP.renameInline('groupAddress','1/2/3','head'); XP.state.inl.err='Der Name darf nicht leer sein.'; XP.set({})")),
+  ("gaAddress", lambda page: page.evaluate("XP.set({view:'groupAddresses'}); XP.openObject('groupAddress','2/1/1',{pin:true})")),
+  ("gaAddressEdit", lambda page: page.evaluate(
+    "XP.set({view:'groupAddresses'}); XP.openObject('groupAddress','2/1/1',{pin:true}); XP.changeGaAddress('2/1/1'); XP.state.addrEdit.value='2/5/1'; XP.set({})")),
   ("gaCreate", lambda page: page.evaluate("XP.set({view:'groupAddresses'}); XP.gaCreate('ga','1/2')")),
   ("commissioning", lambda page: page.evaluate(
     "XP.set({workspace:'commissioning', view:'commissioningDevices'}); XP.openObject('commissioningDevice','1.1.4',{pin:true}); XP.queue.enqueue('1.1.5','all')")),
@@ -1660,28 +1667,27 @@ def test_ga_group_detail_rename_delete(ctx):
   assert "3/0/0 – 3/7/255" in page.locator("[data-testid=group-range]").inner_text()
   assert page.locator("[data-testid=group-counts]").inner_text() == "2 Mittelgruppen · 16 Gruppenadressen"
   assert det.locator(":is(input,select,textarea)").count() == 0
-  # rename a main group: detail pane button
+  # rename a main group: the detail button starts inline rename of the title
   page.click("[data-testid=group-rename]")
-  assert page.locator("[data-testid=dialog-title]").inner_text() == "Umbenennen"
-  assert page.locator("[data-testid=dialog]").get_attribute("data-density") == "comfortable"
-  page.fill("[data-testid=rename-input]", "Klima")
-  page.click("[data-testid=rename-confirm]")
+  assert page.locator("[data-testid=dialog]").count() == 0, "no rename dialog any more"
+  page.fill("[data-testid=inline-name]", "Klima")
+  page.keyboard.press("Enter")
   assert page.locator("[data-testid=group-title]").inner_text() == "Klima"
   assert "Klima" in page.locator("[data-level=main][data-group='3']").inner_text()
   assert "Klima" in page.locator("[data-testid=tabs]").inner_text()
-  # rename a middle group: context menu
+  # rename a middle group: context menu starts the inline rename in the header
   page.click("[data-level=mid][data-group='3/1']", button="right")
   page.click("[data-testid=context-menu] >> text=Umbenennen…")
-  assert page.input_value("[data-testid=rename-input]") == "Ist-Temperatur"
-  page.fill("[data-testid=rename-input]", "Istwerte")
+  assert page.input_value("[data-testid=inline-name]") == "Ist-Temperatur"
+  page.fill("[data-testid=inline-name]", "Istwerte")
   page.keyboard.press("Enter")
   assert "Istwerte" in page.locator("[data-level=mid][data-group='3/1']").inner_text()
-  # rename with F2 on a focused group row
+  # rename with F2 on a focused group row: inline in the row
   page.focus("[data-level=mid][data-group='3/2']")
   page.keyboard.press("F2")
-  assert page.input_value("[data-testid=rename-input]") == "Soll-Temperatur"
-  page.fill("[data-testid=rename-input]", "Sollwerte")
-  page.click("[data-testid=rename-confirm]")
+  assert page.input_value("[data-level=mid][data-group='3/2'] [data-testid=inline-name]") == "Soll-Temperatur"
+  page.fill("[data-testid=inline-name]", "Sollwerte")
+  page.keyboard.press("Enter")
   assert "Sollwerte" in page.locator("[data-level=mid][data-group='3/2']").inner_text()
   # delete a middle group: confirmation states the count of removed addresses
   page.click("[data-level=mid][data-group='3/2']")
@@ -1707,6 +1713,229 @@ def test_ga_group_detail_rename_delete(ctx):
   page = ga_page(ctx, 400, 860)
   page.click("[data-level=main][data-group='2']")
   assert page.locator("[data-testid=group-detail]").is_visible()
+  page.context.close()
+
+
+def sel_all(page):
+  return page.evaluate("(() => { const i = document.querySelector('[data-testid=inline-name]'); return i.selectionStart === 0 && i.selectionEnd === i.value.length && i.value.length > 0; })()")
+
+
+@test
+def test_inline_rename_row_gesture(ctx):
+  page = ga_page(ctx)
+  row = "[data-row='1/2/1']"
+  assert page.locator("[data-testid=inline-name]").count() == 0, "never a persistent input in a row"
+  page.dblclick(row + " .nm")
+  inp = page.locator(row + " [data-testid=inline-name]")
+  assert inp.count() == 1 and inp.input_value() == "Licht Flur"
+  assert sel_all(page), "name selected"
+  assert page.evaluate("document.activeElement === document.querySelector('[data-testid=inline-name]')")
+  # double-click pins
+  assert page.evaluate("XP.state.tabs.map(t => t.pinned)") == [True]
+  # Escape cancels
+  page.keyboard.type("Neu")
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=inline-name]").count() == 0
+  assert "Licht Flur" in page.locator(row).inner_text()
+  # empty name is rejected with a hint, the old name stays
+  page.dblclick(row + " .nm")
+  page.fill("[data-testid=inline-name]", "  ")
+  page.keyboard.press("Enter")
+  assert page.locator("[data-testid=inline-error]").is_visible()
+  assert page.locator("[data-testid=inline-name]").count() == 1
+  assert page.evaluate("XP.data.groupAddresses.find(g => g.address === '1/2/1').name") == "Licht Flur"
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=inline-error]").count() == 0
+  # Enter commits
+  page.dblclick(row + " .nm")
+  page.fill("[data-testid=inline-name]", "Licht Eingang")
+  page.keyboard.press("Enter")
+  assert page.locator("[data-testid=inline-name]").count() == 0
+  assert "Licht Eingang" in page.locator(row).inner_text()
+  assert "Licht Eingang" in page.locator("[data-testid=ga-title]").inner_text()
+  # blur without change cancels, blur with change commits
+  page.dblclick(row + " .nm")
+  page.click("[data-testid=ga-filter]")
+  page.wait_for_timeout(50)
+  assert page.locator("[data-testid=inline-name]").count() == 0
+  assert "Licht Eingang" in page.locator(row).inner_text()
+  page.dblclick(row + " .nm")
+  page.fill("[data-testid=inline-name]", "Licht Diele")
+  page.click("[data-testid=ga-filter]")
+  page.wait_for_timeout(50)
+  assert "Licht Diele" in page.locator(row).inner_text()
+  page.context.close()
+
+
+@test
+def test_inline_rename_pins_preview_and_f2(ctx):
+  page = ga_page(ctx)
+  page.click("[data-row='1/2/2']")
+  assert page.evaluate("XP.state.tabs.map(t => t.pinned)") == [False]
+  page.keyboard.press("F2")
+  assert page.locator("[data-row='1/2/2'] [data-testid=inline-name]").count() == 1 and sel_all(page)
+  page.keyboard.type("Licht Test")
+  page.keyboard.press("Enter")
+  assert "Licht Test" in page.locator("[data-row='1/2/2']").inner_text()
+  assert page.evaluate("XP.state.tabs.map(t => t.pinned)") == [True], "rename pins the preview tab"
+  # main and middle group rows
+  page.dblclick("[data-level=main][data-group='1'] .nm")
+  assert page.locator("[data-level=main][data-group='1'] [data-testid=inline-name]").count() == 1
+  page.keyboard.press("Escape")
+  page.dblclick("[data-level=mid][data-group='1/1'] .nm")
+  page.keyboard.type("Alle")
+  page.keyboard.press("Enter")
+  assert page.locator("[data-level=mid][data-group='1/1']").inner_text().find("Alle") >= 0
+  # the context menu entry stays and renames in the header
+  page.click("[data-row='1/2/3']", button="right")
+  page.click("[data-testid=context-menu] >> text=Umbenennen…")
+  assert page.locator("[data-testid=dialog]").count() == 0
+  assert page.locator(".dev-head [data-testid=inline-name]").count() == 1
+  page.keyboard.press("Escape")
+  # a double-click inside the input neither restarts nor pins
+  page.dblclick("[data-row='1/2/4'] .nm")
+  page.dblclick("[data-testid=inline-name]")
+  assert page.locator("[data-testid=inline-name]").count() == 1
+  page.context.close()
+
+
+@test
+def test_inline_rename_device_row(ctx):
+  page = ctx.page()
+  page.dblclick("[data-row='1.1.2'] .nm")
+  assert page.locator("[data-row='1.1.2'] [data-testid=inline-name]").input_value() == "IP-Router"
+  assert sel_all(page)
+  page.keyboard.type("Router EG")
+  page.keyboard.press("Enter")
+  assert "Router EG" in page.locator("[data-row='1.1.2']").inner_text()
+  assert page.evaluate("XP.state.tabs.map(t => t.pinned)") == [True]
+  page.click("[data-row='1.1.3']")
+  page.keyboard.press("F2")
+  assert page.locator("[data-row='1.1.3'] [data-testid=inline-name]").count() == 1
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=inline-name]").count() == 0
+  page.context.close()
+
+
+@test
+def test_inline_rename_detail_title(ctx):
+  page = ga_page(ctx)
+  page.click("[data-row='1/2/5']")
+  btn = page.locator("[data-testid=rename-btn]")
+  assert btn.is_visible() and btn.inner_text() == "✎", "visible, not hover-only"
+  assert page.evaluate("document.querySelector('[data-testid=rename-btn]').getBoundingClientRect().height") >= 24
+  btn.click()
+  assert page.locator(".dev-head [data-testid=inline-name]").input_value() == "Licht Büro" and sel_all(page)
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=inline-name]").count() == 0
+  page.dblclick("[data-testid=ga-title]")
+  assert page.locator(".dev-head [data-testid=inline-name]").count() == 1
+  page.keyboard.type("Licht Arbeitszimmer")
+  page.keyboard.press("Enter")
+  assert page.locator("[data-testid=ga-title]").inner_text() == "Licht Arbeitszimmer"
+  assert "Licht Arbeitszimmer" in page.locator("[data-row='1/2/5']").inner_text()
+  assert page.evaluate("XP.state.tabs.map(t => t.pinned)") == [True]
+  # device editor title
+  page.click("[data-view=devices]")
+  page.click("[data-row='1.1.4']")
+  page.dblclick("[data-testid=device-title]")
+  page.keyboard.type("Schaltaktor Küche")
+  page.keyboard.press("Enter")
+  assert page.locator("[data-testid=device-title]").inner_text() == "Schaltaktor Küche"
+  page.click("[data-testid=rename-btn]")
+  assert page.locator(".dev-head [data-testid=inline-name]").count() == 1
+  page.context.close()
+
+
+@test
+def test_inline_rename_narrow_touch_menu(ctx):
+  page = ga_page(ctx, 400, 860)
+  page.click("[data-row='1/2/1']", button="right")
+  page.click("[data-testid=context-menu] >> text=Umbenennen…")
+  assert page.locator("[data-testid=dialog]").count() == 0
+  assert page.locator(".dev-head [data-testid=inline-name]").is_visible()
+  assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+  page.context.close()
+
+
+def addr_of(page, ref):
+  return page.evaluate(f"XP.data.groupAddresses.some(g => g.address === '{ref}')")
+
+
+@test
+def test_ga_address_change(ctx):
+  page = ga_page(ctx)
+  page.click("[data-row='2/1/1']")
+  assert page.locator("[data-testid=ga-address]").inner_text() == "2/1/1"
+  # the device group object linked to 2/1/1 (1.1.5, object 1)
+  page.evaluate("XP.set({workspace:'planning'})")
+  # empty / invalid / out of range / in use / unknown main group
+  page.click("[data-testid=ga-address-change]")
+  inp = page.locator("[data-testid=ga-address-input]")
+  assert inp.input_value() == "2/1/1" and page.locator("[data-testid=ga-address-apply]").is_disabled()
+  for text, msg in [("abc", "Ungültiges Format"), ("2/1", "Ungültiges Format"), ("32/1/1", "Außerhalb"), ("2/8/1", "Außerhalb"), ("2/1/256", "Außerhalb"),
+                    ("2/1/2", "bereits vergeben"), ("9/0/1", "Hauptgruppe 9 existiert nicht")]:
+    inp.fill(text)
+    assert msg in page.locator("[data-testid=ga-address-error]").inner_text(), (text, msg)
+    assert page.locator("[data-testid=ga-address-apply]").is_disabled(), text
+  # a valid move inside an existing middle group
+  inp.fill("2/1/20")
+  assert page.locator("[data-testid=ga-address-error]").count() == 0
+  btn = page.locator("[data-testid=ga-address-apply]")
+  assert btn.is_enabled() and btn.inner_text() == "Adresse auf 2/1/20 ändern"
+  page.keyboard.press("Enter")
+  assert page.locator("[data-testid=ga-address]").inner_text() == "2/1/20"
+  assert addr_of(page, "2/1/20") and not addr_of(page, "2/1/1")
+  assert page.evaluate("XP.state.activeTab") == "groupAddress:2/1/20"
+  assert page.evaluate("XP.state.tabs.map(t => t.pinned)") == [True]
+  assert page.evaluate("XP.state.selection.groupAddress") == "2/1/20"
+  # re-sorted in the tree: after 2/1/6, selected
+  rows = page.evaluate("[...document.querySelectorAll('[data-kind=groupAddress]')].map(r => r.dataset.row)")
+  assert rows.index("2/1/20") == rows.index("2/1/6") + 1 and page.locator("[data-row='2/1/20'].sel").count() == 1
+  # the group object link follows
+  assert page.evaluate("XP.data.devices.find(d => d.address === '1.1.5').groupObjects[0].gas") == ["2/1/20"]
+  page.evaluate("XP.openObject('device','1.1.5',{pin:true}); XP.planning.mode('1.1.5','objects')")
+  assert "2/1/20" in page.locator("[data-testid=go-table]").inner_text()
+  assert "2/1/1" not in page.locator("[data-testid=go-table]").inner_text().replace("2/1/20", "")
+  # and the group address editor lists the device
+  page.click("[data-row='2/1/20']")
+  assert "1.1.5" in page.locator("[data-testid=ga-links]").inner_text()
+  page.context.close()
+
+
+@test
+def test_ga_address_change_creates_middle_group(ctx):
+  page = ga_page(ctx)
+  page.click("[data-row='2/2/1']", button="right")
+  page.click("[data-testid=context-menu] >> text=Adresse ändern…")
+  assert page.evaluate("document.activeElement.dataset.testid") == "ga-address-input"
+  page.keyboard.type("2/5/1")
+  assert "Mittelgruppe 2/5 existiert nicht" in page.locator("[data-testid=ga-address-hint]").inner_text()
+  btn = page.locator("[data-testid=ga-address-apply]")
+  assert btn.inner_text() == "Mittelgruppe 2/5 anlegen und verschieben" and btn.is_enabled()
+  assert "primary" in btn.get_attribute("class")
+  btn.click()
+  assert page.evaluate("XP.data.groups.find(m => m.id === '2').children.map(c => c.id)") == ["2/1", "2/2", "2/5"]
+  assert page.locator("[data-level=mid][data-group='2/5']").count() == 1
+  assert page.locator("[data-row='2/5/1'].sel").count() == 1
+  assert page.evaluate("XP.data.devices.find(d => d.address === '1.1.5').groupObjects[1].gas") == ["2/5/1"]
+  # Escape cancels an address edit
+  page.click("[data-testid=ga-address-change]")
+  page.keyboard.type("x")
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=ga-address-input]").count() == 0
+  assert page.locator("[data-testid=ga-address]").inner_text() == "2/5/1"
+  page.context.close()
+
+
+@test
+def test_ga_address_section_narrow(ctx):
+  page = ga_page(ctx, 400, 860)
+  page.click("[data-row='1/2/1']")
+  page.click("[data-testid=ga-address-change]")
+  page.fill("[data-testid=ga-address-input]", "1/2/99")
+  assert page.locator("[data-testid=ga-address-apply]").is_visible()
+  assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
   page.context.close()
 
 

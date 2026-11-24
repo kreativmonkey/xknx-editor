@@ -15,6 +15,8 @@
   S.goSelectMode = null;  /* device address in touch multi-select: a tap toggles rows until "Fertig" */
   S.listFilter = "";
   S.gaFilter = "";
+  S.inl = null;         /* inline rename: { type: device|ga|gaGroup, ref, where: row|head, value, orig, err } */
+  S.addrEdit = null;    /* group address being re-addressed: { ref, value } */
 
   var DPT = {
     "1.001": "Schalten", "1.003": "Freigeben", "1.008": "Auf/Ab", "3.007": "Dimmen", "5.001": "Prozent",
@@ -47,6 +49,75 @@
   function touch() {
     var t = activeTab();
     if (t && !t.pinned) XP.pinTab(t.id);
+  }
+
+  /* ---------- inline rename (name only, after an explicit gesture) ---------- */
+  function nameInput(i, cls) {
+    return h`<input class="input inl-input ${cls}" data-inl="name" data-fk="inl" data-testid="inline-name" type="text" maxlength="80" autocomplete="off" spellcheck="false" aria-label="Name" aria-invalid="${String(!!i.err)}" value="${i.value}">`;
+  }
+  function inlOn(type, ref, where) {
+    return S.inl && S.inl.type === type && S.inl.ref === ref && S.inl.where === where ? S.inl : null;
+  }
+  function inlErr(i) {
+    return i && i.err ? h`<div class="inl-err chk err t-caption" data-testid="inline-error" role="alert"><span aria-hidden="true">✕</span><span class="wrap">${i.err}</span></div>` : "";
+  }
+  /* the name cell of a list row: the text, or the input while this row is renamed */
+  function nameCell(type, ref, name) {
+    var i = inlOn(type, ref, "row");
+    return i ? h`<span class="nm">${nameInput(i, "")}</span>` : h`<span class="nm trunc">${name}</span>`;
+  }
+  /* the title of a detail header: text plus a visible rename button, or the input */
+  function titleBlock(type, ref, name, testid) {
+    var i = inlOn(type, ref, "head");
+    if (i) return h`<div class="dh-name edit">${nameInput(i, "t-title")}${inlErr(i)}</div>`;
+    return h`<div class="dh-name"><div class="t-title wrap" data-testid="${testid}" data-rename-title="${type}:${ref}">${name}</div><button class="btn ico" data-testid="rename-btn" data-fk="rename-btn" data-action="renameInline" data-type="${type}" data-ref="${ref}" aria-label="Umbenennen" title="Umbenennen (F2)">✎</button></div>`;
+  }
+  var KIND = { device: "device", ga: "groupAddress", gaGroup: "gaGroup" };
+  var TYPE = { device: "device", groupAddress: "ga", gaGroup: "gaGroup" };
+  function focusInline(all) {
+    var i = document.querySelector(".inl-input[data-inl=name]");
+    if (!i) return;
+    i.focus({ preventScroll: true });
+    if (all) i.select(); else i.setSelectionRange(i.value.length, i.value.length);
+  }
+  function focusBack(i) {
+    var n = document.querySelector('[data-fk="' + (i.where === "row" ? "row:" + i.ref : "rename-btn") + '"]');
+    if (n) n.focus({ preventScroll: true });
+  }
+  function startRename(type, ref, where) {
+    var name = currentName(type, ref);
+    var patch = { inl: { type: type, ref: ref, where: where, value: name, orig: name, err: "" }, addrEdit: null };
+    if (where === "head") patch.inspectorOpen = false;
+    XP.set(patch);
+    focusInline(true);
+  }
+  XP.renameInline = function (kind, ref, where) { startRename(TYPE[kind] || kind, ref, where || "head"); };
+  function cancelInline() {
+    var i = S.inl;
+    if (!i) return;
+    XP.set({ inl: null });
+    focusBack(i);
+  }
+  function commitInline() {
+    var i = S.inl;
+    if (!i) return;
+    var name = String(i.value || "").trim();
+    if (!name) { i.err = "Der Name darf nicht leer sein. Escape stellt den alten Namen wieder her."; XP.set({}); focusInline(false); return; }
+    if (name === i.orig) { cancelInline(); return; }
+    if (i.type === "device") dev(i.ref).name = name;
+    else if (i.type === "ga") gaOf(i.ref).name = name;
+    else { var gf = findGroup(i.ref); if (gf) gf.g.name = name; }
+    /* renaming is an edit: the preview tab of this object becomes a pinned one */
+    var tid = KIND[i.type] + ":" + i.ref;
+    XP.set({ inl: null, tabs: S.tabs.map(function (t) { return t.id === tid ? Object.assign({}, t, { pinned: true }) : t; }) });
+    focusBack(i);
+  }
+  /* re-render while typing, keeping the caret */
+  function rerenderKeepCaret(el) {
+    var pos = el.selectionStart, kind = el.dataset.inl;
+    XP.set({});
+    var n = document.querySelector(".inl-input[data-inl=" + kind + "]");
+    if (n) { n.focus({ preventScroll: true }); try { n.setSelectionRange(pos, pos); } catch (e) { /* ignore */ } }
   }
 
   /* ---------- editor state ---------- */
@@ -86,7 +157,7 @@
   /* ---------- devices list ---------- */
   function deviceRow(x, sel, first) {
     var on = sel === x.address, tab = (sel ? on : x.address === first) ? 0 : -1;
-    return h`<div class="row ${on ? "sel" : ""}" role="option" aria-selected="${String(on)}" tabindex="${tab}" data-row="${x.address}" data-kind="device" data-fk="row:${x.address}" title="${x.address} ${x.name}"><span class="addr mono">${x.address}</span><span class="nm trunc">${x.name}</span></div>`;
+    return h`<div class="row ${on ? "sel" : ""}" role="option" aria-selected="${String(on)}" tabindex="${tab}" data-row="${x.address}" data-kind="device" data-fk="row:${x.address}" title="${x.address} ${x.name}"><span class="addr mono">${x.address}</span>${nameCell("device", x.address, x.name)}</div>${inlErr(inlOn("device", x.address, "row"))}`;
   }
   /* Same rows either way: grouped by area/line (topology) or by building, floor and room. */
   function deviceGroups(vis, grouping) {
@@ -253,7 +324,7 @@
       var d = dev(tab.ref);
       if (!d) return h`<div class="empty">Gerät nicht gefunden.</div>`;
       var e = est(d), objs = e.mode === "objects";
-      var head = h`<div class="dev-head"><div class="dh-t"><div class="dh-tr"><div class="t-title wrap" data-testid="device-title">${d.name}</div>${statusBadge(d.status)}</div><div class="t-caption wrap">${d.address} · ${d.manufacturer} ${d.product} · ${d.room}</div></div><span class="spacer"></span><div class="seg" data-testid="mode-toggle" role="group" aria-label="Ansicht"><button class="${objs ? "" : "on"}" data-testid="mode-params" data-action="mode" data-mode="params" aria-pressed="${String(!objs)}">Parameter</button><button class="${objs ? "on" : ""}" data-testid="mode-objects" data-action="mode" data-mode="objects" aria-pressed="${String(objs)}">Gruppenobjekte</button></div>${inspectorButton(objs ? gsel(d).ids.length : 0)}</div>`;
+      var head = h`<div class="dev-head"><div class="dh-t"><div class="dh-tr">${titleBlock("device", d.address, d.name, "device-title")}${statusBadge(d.status)}</div><div class="t-caption wrap">${d.address} · ${d.manufacturer} ${d.product} · ${d.room}</div></div><span class="spacer"></span><div class="seg" data-testid="mode-toggle" role="group" aria-label="Ansicht"><button class="${objs ? "" : "on"}" data-testid="mode-params" data-action="mode" data-mode="params" aria-pressed="${String(!objs)}">Parameter</button><button class="${objs ? "on" : ""}" data-testid="mode-objects" data-action="mode" data-mode="objects" aria-pressed="${String(objs)}">Gruppenobjekte</button></div>${inspectorButton(objs ? gsel(d).ids.length : 0)}</div>`;
       return frame(head, h`<div class="dev-main">${objs ? objectsBody(d) : paramsBody(d, e)}</div>`, deviceInspector(d));
     },
   };
@@ -296,11 +367,11 @@
     return h`${vis.map(function (v) {
       var m = v.m, mo = open(m.id), n = v.kids.reduce(function (a, k) { return a + k.items.length; }, 0);
       var mon = sel.kind === "gaGroup" && sel.ref === m.id;
-      return h`<div class="grow lvl-main ${mon ? "sel" : ""}" role="treeitem" aria-selected="${String(mon)}" aria-expanded="${String(mo)}" tabindex="${(hasSel ? mon : m.id === first) ? 0 : -1}" data-row="${m.id}" data-kind="gaGroup" data-level="main" data-group="${m.id}" data-fk="row:${m.id}" title="${m.id} ${m.name}"><span class="chev" data-testid="chev" data-action="toggleGroup" data-group="${m.id}">${mo ? "▾" : "▸"}</span><span class="addr mono">${m.id}</span><span class="nm trunc">${m.name}</span><span class="count">${n}</span></div>${mo ? v.kids.map(function (k) {
+      return h`<div class="grow lvl-main ${mon ? "sel" : ""}" role="treeitem" aria-selected="${String(mon)}" aria-expanded="${String(mo)}" tabindex="${(hasSel ? mon : m.id === first) ? 0 : -1}" data-row="${m.id}" data-kind="gaGroup" data-level="main" data-group="${m.id}" data-fk="row:${m.id}" title="${m.id} ${m.name}"><span class="chev" data-testid="chev" data-action="toggleGroup" data-group="${m.id}">${mo ? "▾" : "▸"}</span><span class="addr mono">${m.id}</span>${nameCell("gaGroup", m.id, m.name)}<span class="count">${n}</span></div>${inlErr(inlOn("gaGroup", m.id, "row"))}${mo ? v.kids.map(function (k) {
         var c = k.c, co = open(c.id), con = sel.kind === "gaGroup" && sel.ref === c.id;
-        return h`<div class="grow lvl-mid ${con ? "sel" : ""}" role="treeitem" aria-selected="${String(con)}" aria-expanded="${String(co)}" tabindex="-1" data-row="${c.id}" data-kind="gaGroup" data-level="mid" data-group="${c.id}" data-fk="row:${c.id}" title="${c.id} ${c.name}"><span class="chev" data-testid="chev" data-action="toggleGroup" data-group="${c.id}">${co ? "▾" : "▸"}</span><span class="addr mono">${c.id}</span><span class="nm trunc">${c.name}</span><span class="count">${k.items.length}</span></div>${co ? k.items.map(function (g) {
+        return h`<div class="grow lvl-mid ${con ? "sel" : ""}" role="treeitem" aria-selected="${String(con)}" aria-expanded="${String(co)}" tabindex="-1" data-row="${c.id}" data-kind="gaGroup" data-level="mid" data-group="${c.id}" data-fk="row:${c.id}" title="${c.id} ${c.name}"><span class="chev" data-testid="chev" data-action="toggleGroup" data-group="${c.id}">${co ? "▾" : "▸"}</span><span class="addr mono">${c.id}</span>${nameCell("gaGroup", c.id, c.name)}<span class="count">${k.items.length}</span></div>${inlErr(inlOn("gaGroup", c.id, "row"))}${co ? k.items.map(function (g) {
           var on = sel.kind === "groupAddress" && sel.ref === g.address, nl = linksOf(g.address).length;
-          return h`<div class="row ga ${on ? "sel" : ""}" role="treeitem" aria-selected="${String(on)}" tabindex="${on ? 0 : -1}" data-row="${g.address}" data-kind="groupAddress" data-fk="row:${g.address}" title="${g.address} ${g.name} · ${nl} verknüpft"><span class="addr mono">${g.address}</span><span class="nm trunc">${g.name}</span>${nl ? "" : h`<span class="sb" data-testid="ga-unlinked">nicht verknüpft</span>`}</div>`;
+          return h`<div class="row ga ${on ? "sel" : ""}" role="treeitem" aria-selected="${String(on)}" tabindex="${on ? 0 : -1}" data-row="${g.address}" data-kind="groupAddress" data-fk="row:${g.address}" title="${g.address} ${g.name} · ${nl} verknüpft"><span class="addr mono">${g.address}</span>${nameCell("ga", g.address, g.name)}${nl ? "" : h`<span class="sb" data-testid="ga-unlinked">nicht verknüpft</span>`}</div>${inlErr(inlOn("ga", g.address, "row"))}`;
         }) : ""}`;
       }) : ""}`;
     })}`;
@@ -450,13 +521,82 @@
       var f = findGroup(tab.ref);
       if (!f) return h`<div class="empty">Gruppe nicht gefunden.</div>`;
       var main = f.level === "main", hasMid = XP.data.groups.some(function (m) { return m.children.length; });
-      var head = h`<div class="dev-head"><div class="dh-t"><div class="t-title wrap" data-testid="group-title">${f.g.name}</div><div class="t-caption wrap"><span class="mono">${f.g.id}</span> · ${main ? "Hauptgruppe" : "Mittelgruppe"}</div></div></div>`;
+      var head = h`<div class="dev-head"><div class="dh-t">${titleBlock("gaGroup", f.g.id, f.g.name, "group-title")}<div class="t-caption wrap"><span class="mono">${f.g.id}</span> · ${main ? "Hauptgruppe" : "Mittelgruppe"}</div></div></div>`;
       var body = h`<div class="grp-body" data-testid="group-detail"><div class="callout"><div><div class="t-label">Adressbereich</div><div class="mono" data-testid="group-range">${groupRange(f)}</div></div><div><div class="t-label">Enthält</div><div data-testid="group-counts">${groupCounts(f)}</div></div></div>
         <div class="grp-actions">${main ? h`<button class="btn bordered" data-testid="group-new-mid" data-fk="group-new-mid" data-action="gaNewIn" data-level="mid" data-ref="${f.g.id}">Neue Mittelgruppe…</button>` : ""}<button class="btn bordered" data-testid="group-new-ga" data-fk="group-new-ga" data-action="gaNewIn" data-level="ga" data-ref="${f.g.id}" ${main && !f.g.children.length ? "disabled" : ""}>Neue Gruppenadresse…</button></div>
         <div class="grp-actions"><button class="btn bordered" data-testid="group-rename" data-fk="group-rename" data-action="rename" data-type="gaGroup" data-ref="${f.g.id}">Umbenennen… (F2)</button><button class="btn bordered" data-testid="group-delete" data-fk="group-delete" data-action="gaDelete" data-ref="${f.g.id}">Löschen…</button></div>${main && !f.g.children.length && hasMid ? h`<div class="t-caption">Lege zuerst eine Mittelgruppe an, um Gruppenadressen hinzuzufügen.</div>` : ""}</div>`;
       return h`<div class="dev">${head}<div class="dev-body"><div class="dev-main">${body}</div></div></div>`;
     },
   };
+  /* ---- changing the address of a group address (main/middle/address) ---- */
+  function addrCheck(g, v) {
+    var t = String(v).trim(), r = { ok: false, err: "", hint: "", addr: "", mid: "", needsMid: false };
+    var fmt = "Format: Haupt/Mittel/Adresse (0–31 / 0–7 / 0–255), zum Beispiel 2/1/1.";
+    var m = /^(\d{1,2})\/(\d)\/(\d{1,3})$/.exec(t);
+    if (!m) { if (t) r.err = "Ungültiges Format. " + fmt; else r.hint = fmt; return r; }
+    var a = +m[1], b = +m[2], c = +m[3];
+    if (a > 31 || b > 7 || c > 255) { r.err = "Außerhalb des Bereichs. Erlaubt: 0–31 / 0–7 / 0–255."; return r; }
+    r.addr = a + "/" + b + "/" + c; r.mid = a + "/" + b;
+    if (r.addr === g.address) { r.hint = "Das ist die aktuelle Adresse."; return r; }
+    var other = gaOf(r.addr);
+    if (other) { r.err = r.addr + " ist bereits vergeben (" + other.name + ")."; return r; }
+    if (!findGroup(String(a))) { r.err = "Hauptgruppe " + a + " existiert nicht. Lege sie zuerst an."; return r; }
+    if (!findGroup(r.mid)) { r.needsMid = true; r.hint = "Mittelgruppe " + r.mid + " existiert nicht."; }
+    r.ok = true;
+    return r;
+  }
+  function addrSection(g) {
+    var ed = S.addrEdit && S.addrEdit.ref === g.address ? S.addrEdit : null;
+    var head = h`<div class="pbar"><span class="sec">Adresse</span></div>`;
+    if (!ed) {
+      return h`${head}<div class="addr-row"><span class="mono" data-testid="ga-address">${g.address}</span><button class="btn bordered" data-testid="ga-address-change" data-fk="ga-address-change" data-action="addrEdit" data-ref="${g.address}">Ändern…</button></div>`;
+    }
+    var c = addrCheck(g, ed.value);
+    var primary = c.ok ? (c.needsMid ? "Mittelgruppe " + c.mid + " anlegen und verschieben" : "Adresse auf " + c.addr + " ändern") : "Adresse ändern";
+    return h`${head}<div class="addr-edit"><div class="field"><label class="t-label" for="ga-addr-in">Neue Adresse</label><input id="ga-addr-in" class="input mono inl-input addr-in" data-inl="addr" data-fk="addr-edit" data-testid="ga-address-input" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="9" value="${ed.value}" aria-invalid="${String(!!c.err)}" aria-describedby="ga-addr-check"></div>
+      <div id="ga-addr-check">${c.err ? h`<div class="chk err" data-testid="ga-address-error" role="alert"><span aria-hidden="true">✕</span><span class="wrap">${c.err}</span></div>` : h`<div class="t-caption wrap" data-testid="ga-address-hint">${c.hint}</div>`}</div>
+      <div class="btnrow"><button class="btn" data-testid="ga-address-cancel" data-action="addrCancel">Abbrechen</button><button class="btn primary" data-testid="ga-address-apply" data-fk="addr-apply" data-action="addrApply" ${c.ok ? "" : "disabled"}>${primary}</button></div></div>`;
+  }
+  function startAddrEdit(ref) {
+    XP.set({ addrEdit: { ref: ref, value: ref }, inl: null, inspectorOpen: false });
+    var i = document.querySelector(".inl-input[data-inl=addr]");
+    if (i) { i.focus({ preventScroll: true }); i.select(); }
+  }
+  function cancelAddrEdit() {
+    var ref = S.addrEdit && S.addrEdit.ref;
+    XP.set({ addrEdit: null });
+    var b = document.querySelector('[data-fk="ga-address-change"]');
+    if (b && ref) b.focus({ preventScroll: true });
+  }
+  function applyAddrEdit() {
+    var ed = S.addrEdit, g = ed && gaOf(ed.ref);
+    if (!g) return false;
+    var c = addrCheck(g, ed.value);
+    if (!c.ok) return false;
+    var old = g.address, main = c.addr.split("/")[0], open = Object.assign({}, S.gaOpen);
+    if (c.needsMid) {
+      var mn = findGroup(main).g;
+      mn.children.push({ id: c.mid, name: "Neue Mittelgruppe" });
+      mn.children.sort(function (a, b) { return +a.id.split("/")[1] - +b.id.split("/")[1]; });
+    }
+    g.address = g.id = c.addr; g.group = c.mid;
+    sortGa();
+    /* group object links, tabs and selection follow the address */
+    XP.data.devices.forEach(function (dv) {
+      dv.groupObjects.forEach(function (o) { o.gas = o.gas.map(function (a) { return a === old ? c.addr : a; }); });
+    });
+    var nid = "groupAddress:" + c.addr, oid = "groupAddress:" + old;
+    var tabs = S.tabs.map(function (t) { return t.id === oid ? Object.assign({}, t, { id: nid, ref: c.addr, pinned: true }) : t; });
+    var sel = Object.assign({}, S.selection); sel.groupAddress = c.addr;
+    open[c.mid] = true; open[main] = true;
+    S.gaOpen = open; S.gaFilter = "";
+    XP.set({ addrEdit: null, tabs: tabs, activeTab: S.activeTab === oid ? nid : S.activeTab, selection: sel });
+    var row = document.querySelector('[data-fk="row:' + c.addr + '"]');
+    if (row) row.scrollIntoView({ block: "nearest" });
+    return true;
+  }
+  XP.changeGaAddress = startAddrEdit;
+
   XP.VIEWS.groupAddress = {
     label: "Gruppenadresse", icon: "⌗",
     tabLabel: function (ref) { var g = gaOf(ref); return g ? ref + " " + g.name : ref; },
@@ -464,8 +604,8 @@
       var g = gaOf(tab.ref);
       if (!g) return h`<div class="empty">Gruppenadresse nicht gefunden.</div>`;
       var links = linksOf(g.address);
-      var head = h`<div class="dev-head"><div class="dh-t"><div class="t-title wrap" data-testid="ga-title">${g.name}</div><div class="t-caption wrap"><span class="mono">${g.address}</span> · ${g.dpt} ${dptName(g.dpt)}</div></div><span class="spacer"></span>${inspectorButton(0)}</div>`;
-      var body = h`<div class="dev-main"><div class="pbar"><span class="sec">Verknüpfte Gruppenobjekte (${links.length})</span></div><div class="tblwrap" data-scroll="tbl">${links.length ? h`<table class="tbl" data-testid="ga-links"><thead><tr><th>Gerät</th><th>Objekt</th><th class="col-typ">Typ</th><th>Flags</th></tr></thead><tbody>${links.map(function (l) {
+      var head = h`<div class="dev-head"><div class="dh-t">${titleBlock("ga", g.address, g.name, "ga-title")}<div class="t-caption wrap"><span class="mono">${g.address}</span> · ${g.dpt} ${dptName(g.dpt)}</div></div><span class="spacer"></span>${inspectorButton(0)}</div>`;
+      var body = h`<div class="dev-main"><div class="addr-pane" data-testid="ga-address-section">${addrSection(g)}</div><div class="pbar"><span class="sec">Verknüpfte Gruppenobjekte (${links.length})</span></div><div class="tblwrap" data-scroll="tbl">${links.length ? h`<table class="tbl" data-testid="ga-links"><thead><tr><th>Gerät</th><th>Objekt</th><th class="col-typ">Typ</th><th>Flags</th></tr></thead><tbody>${links.map(function (l) {
         return h`<tr><td class="nmc"><button class="link-btn" data-action="gotoGo" data-dev="${l.d.address}" data-go="${l.o.id}" title="${l.d.address} ${l.d.name}"><span class="mono">${l.d.address}</span> ${l.d.name}</button></td><td class="nmc" title="${l.o.name}">${l.o.name}</td><td class="col-typ">${dptName(l.o.dpt)}</td><td class="flags">${flagsHtml(l.o.flags)}</td></tr>`;
       })}</tbody></table>` : h`<div class="empty" data-testid="ga-links"><div class="t-title">Nicht verknüpft</div><div>Diese Gruppenadresse ist mit keinem Gruppenobjekt verbunden.</div></div>`}</div></div>`;
       return frame(head, body, gaInspector(g));
@@ -548,7 +688,7 @@
       { label: "Öffnen", run: function () { XP.openObject(kind, ref, { pin: false }); } },
       { label: "Anheften", run: function () { XP.openObject(kind, ref, { pin: true }); } },
       { sep: true },
-      { label: "Umbenennen… (F2)", run: function () { XP.openObject(kind, ref, { pin: false }); openRename(name, ref); } },
+      { label: "Umbenennen… (F2)", run: function () { XP.openObject(kind, ref, { pin: false }); startRename(name, ref, "head"); } },
     ];
     if (kind === "gaGroup") {
       var f = findGroup(ref), main = f && f.level === "main";
@@ -557,7 +697,7 @@
         [{ label: "Neue Gruppenadresse…", disabled: main && !f.g.children.length, run: function () { openCreate("ga", ref); } }],
         [{ sep: true }, base[3], { label: "Löschen…", run: function () { openDelete(ref); } }]);
     }
-    if (kind === "groupAddress") base.push({ sep: true }, { label: "Neue Gruppenadresse…", run: function () { openCreate("ga", ref); } });
+    if (kind === "groupAddress") base.push({ label: "Adresse ändern…", run: function () { XP.openObject(kind, ref, { pin: false }); startAddrEdit(ref); } }, { sep: true }, { label: "Neue Gruppenadresse…", run: function () { openCreate("ga", ref); } });
     return base;
   }
   function copyText(t) {
@@ -693,7 +833,14 @@
   A.toggleGroup = function (el) { var id = el.dataset.group; S.gaOpen[id] = S.gaOpen[id] === false; XP.set({}); };
   A.closeInspector = function () { XP.set({ inspectorOpen: false }); };
   A.selectDone = function () { XP.set({ goSelectMode: null }); };
-  A.rename = function (el) { openRename(el.dataset.type, el.dataset.ref); };
+  A.rename = function (el) {
+    if (el.dataset.type === "go") openRename("go", el.dataset.ref);
+    else startRename(el.dataset.type, el.dataset.ref, "head");
+  };
+  A.renameInline = function (el) { startRename(el.dataset.type, el.dataset.ref, "head"); };
+  A.addrEdit = function (el) { startAddrEdit(el.dataset.ref); };
+  A.addrCancel = function () { cancelAddrEdit(); };
+  A.addrApply = function () { applyAddrEdit(); };
   A.confirmRename = function () {
     var i = document.getElementById("rn-name");
     if (i && !applyRename(i.value)) i.focus();
@@ -747,12 +894,15 @@
       if (d) selectGo(d, tr.dataset.row, S.goSelectMode === d.address ? "toggle" : e.shiftKey ? "range" : (e.ctrlKey || e.metaKey) ? "toggle" : "single");
     });
     app.addEventListener("dblclick", function (e) {
+      var tt = e.target.closest("[data-rename-title]");
+      if (tt) { var p = tt.dataset.renameTitle.split(":"); startRename(p[0], p.slice(1).join(":"), "head"); return; }
       var d = curDev();
       if (d && S.goSelectMode === d.address) return;
       if (e.target.closest("tr[data-kind=go]") && XP.formFactor() !== "wide") XP.set({ inspectorOpen: true });
     });
 
     app.addEventListener("contextmenu", function (e) {
+      if (e.target.closest && e.target.closest(".inl-input")) return;
       var row = e.target.closest("[data-row]"), tab = e.target.closest("[data-tab]");
       var bg = !row && !tab && S.view === "groupAddresses" && e.target.closest(".list") && !e.target.closest(".list-filter");
       if (!row && !tab && !bg) return;
@@ -809,6 +959,14 @@
     /* Filters update only their own list so the typing caret survives. */
     app.addEventListener("input", function (e) {
       var t = e.target;
+      if (t.matches && t.matches(".inl-input")) {
+        if (t.dataset.inl === "addr") { if (S.addrEdit) { S.addrEdit.value = t.value; rerenderKeepCaret(t); } }
+        else if (S.inl) {
+          S.inl.value = t.value;
+          if (S.inl.err && t.value.trim()) { S.inl.err = ""; rerenderKeepCaret(t); }
+        }
+        return;
+      }
       if (t.matches && t.matches("[data-testid=param-filter]")) {
         var d = curDev();
         if (!d) return;
@@ -824,6 +982,19 @@
         var tree = document.querySelector("[data-testid=ga-tree]");
         if (tree) tree.innerHTML = String(gaRows(S));
       }
+    });
+
+    /* Leaving the name input: a changed, non-empty name commits, anything else cancels. Deferred so
+       a re-render that swaps the input (focus moves to the new one) does not count as leaving. */
+    app.addEventListener("focusout", function (e) {
+      var t = e.target;
+      if (!t.matches || !t.matches(".inl-input[data-inl=name]")) return;
+      setTimeout(function () {
+        var i = S.inl, a = document.activeElement;
+        if (!i || (a && a.classList && a.classList.contains("inl-input"))) return;
+        var v = String(i.value || "").trim();
+        if (v && v !== i.orig) commitInline(); else cancelInline();
+      }, 0);
     });
 
     /* The wheel scrolls; it never changes a value. */
@@ -861,6 +1032,14 @@
       e.preventDefault(); S.gaOpen[id] = !isOpen; XP.set({});
     });
     document.addEventListener("keydown", function (e) {
+      var inp = e.target && e.target.classList && e.target.classList.contains("inl-input") ? e.target : null;
+      if (inp) {
+        var addr = inp.dataset.inl === "addr";
+        if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); if (addr) applyAddrEdit(); else commitInline(); }
+        else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); if (addr) cancelAddrEdit(); else cancelInline(); }
+        else if (e.key === "F2") e.stopPropagation();
+        return;
+      }
       if (e.key === "Escape") {
         if (menuEl) { XP.closeContextMenu(); e.stopPropagation(); return; }
         if (S.paletteOpen || S.dialog) return;
@@ -877,7 +1056,10 @@
         return;
       }
       var row = t && t.closest(".list [data-row]");
-      if (row) { e.preventDefault(); openRename(row.dataset.kind === "device" ? "device" : row.dataset.kind === "gaGroup" ? "gaGroup" : "ga", row.dataset.row); }
+      if (row && TYPE[row.dataset.kind]) { e.preventDefault(); startRename(TYPE[row.dataset.kind], row.dataset.row, "row"); return; }
+      /* focus in the editor: rename the title of the open object */
+      var at = activeTab();
+      if (at && TYPE[at.kind] && t && !t.closest("input,select,textarea,.list")) { e.preventDefault(); startRename(TYPE[at.kind], at.ref, "head"); }
     }, true);
   });
 })();

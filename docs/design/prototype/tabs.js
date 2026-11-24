@@ -62,18 +62,27 @@
   XP.starters.push(function () {
     var app = document.getElementById("app");
     app.addEventListener("click", function (e) {
+      if (e.target.closest(".inl-input")) return;
       var row = e.target.closest("[data-row]");
       if (row && row.closest(".list")) { if (!e.target.closest("[data-action]")) XP.openObject(row.dataset.kind, row.dataset.row, { pin: false }); return; }
       var tab = e.target.closest("[data-tab]");
       if (tab && !e.target.closest("[data-action]")) XP.activateTab(tab.dataset.tab);
     });
     app.addEventListener("dblclick", function (e) {
+      if (e.target.closest(".inl-input")) return;
       var row = e.target.closest("[data-row]");
-      if (row && row.closest(".list")) { if (!e.target.closest("[data-action]")) XP.openObject(row.dataset.kind, row.dataset.row, { pin: true }); return; }
+      if (row && row.closest(".list")) {
+        if (e.target.closest("[data-action]")) return;
+        XP.openObject(row.dataset.kind, row.dataset.row, { pin: true });
+        /* double-click on the name: rename in place (name only, after this explicit gesture) */
+        if (e.target.closest(".nm") && XP.renameInline && ["device", "groupAddress", "gaGroup"].indexOf(row.dataset.kind) >= 0) XP.renameInline(row.dataset.kind, row.dataset.row, "row");
+        return;
+      }
       var tab = e.target.closest("[data-tab]");
       if (tab && !e.target.closest("[data-action]")) XP.pinTab(tab.dataset.tab);
     });
     app.addEventListener("keydown", function (e) {
+      if (e.target.closest(".inl-input")) return;
       var tab = e.target.closest("[data-tab]");
       if (tab && !e.target.closest("[data-action]") && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault(); XP.activateTab(tab.dataset.tab); return;

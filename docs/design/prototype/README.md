@@ -14,8 +14,8 @@ Theme, workspace, sidebar state, panel widths and saved workspaces survive a rel
 ## What each workspace shows
 
 - **Planen**: device list with preview and pinned tabs, parameter pages with changed-only filter,
-  group objects with multi-select (on touch: long press, "Auswählen") and a resizable inspector, device list grouped by topology or building, group address tree with filter, create/rename/delete of groups and addresses, linked objects, context menus
-  (right click or 500 ms long press), rename and link dialogs.
+  group objects with multi-select (on touch: long press, "Auswählen") and a resizable inspector, device list grouped by topology or building, group address tree with filter, create/delete of groups and addresses, inline rename (double-click the name, F2 or ✎), changing a group address (keeps the links), linked objects, context menus
+  (right click or 500 ms long press), the link dialog.
 - **Inbetriebnahme**: devices by status, what changed since the last programming, program scopes,
   queue with progress and a failing device, change address and replace device flows.
 - **Diagnose & Service**: group monitor with simulated telegrams (pause, read, write).
