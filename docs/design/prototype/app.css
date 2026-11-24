@@ -401,6 +401,23 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 .list .placeholder .btn{margin-top:var(--space-2)}
 .grp-body{display:flex;flex-direction:column;gap:var(--space-4);padding:var(--space-4);flex:1;min-width:0;max-width:640px;overflow:auto}
 .grp-actions{display:flex;gap:var(--space-2);flex-wrap:wrap}
+.callout-foot{display:flex;justify-content:flex-end}
+.btn:disabled{color:var(--text-disabled);cursor:default}
+.btn.danger{color:var(--status-error-text)}
+.gc{display:flex;flex-direction:column;min-width:0}
+.tbl-bar{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;padding-bottom:var(--space-2)}
+.tbl-bar .sec{font-weight:var(--fw-bold);min-width:0}
+.tbl-bar .t-caption{color:var(--text-secondary)}
+.gc-empty{height:auto;border:1px solid var(--border-subtle);border-radius:var(--radius-popup);background:var(--bg-inset)}
+.gc-tbl .adr{width:96px}
+.gc-tbl th.r,.gc-tbl td.r{text-align:right}
+.gc-tbl td.r.dis{color:var(--text-secondary)}
+.gc-tbl .go{width:var(--control-h);padding:0;text-align:right}
+.gc-tbl .go .btn.ico{height:var(--row-h)}
+.gc-tbl .nmc{max-width:none;width:100%;overflow:hidden;text-overflow:ellipsis}
+.gc-tbl .nm{display:block;min-width:0}
+.gc-tbl .inl-input{height:calc(var(--row-h) - var(--space-1));padding:0 var(--space-1)}
+[data-ff=narrow] .gc-tbl .adr{width:auto}
 
 /* inline rename and address change */
 .dh-name{display:flex;align-items:center;gap:var(--space-2);min-width:0}

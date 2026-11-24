@@ -40,6 +40,10 @@ SCREENSHOT_VIEWS = [
   ("gaAddressEdit", lambda page: page.evaluate(
     "XP.set({view:'groupAddresses'}); XP.openObject('groupAddress','2/1/1',{pin:true}); XP.changeGaAddress('2/1/1'); XP.state.addrEdit.value='2/5/1'; XP.set({})")),
   ("gaCreate", lambda page: page.evaluate("XP.set({view:'groupAddresses'}); XP.gaCreate('ga','1/2')")),
+  ("gaMainDetail", lambda page: page.evaluate("XP.set({view:'groupAddresses'}); XP.openObject('gaGroup','1',{pin:true})")),
+  ("gaMiddleDetail", lambda page: page.evaluate("XP.set({view:'groupAddresses'}); XP.openObject('gaGroup','1/2',{pin:true})")),
+  ("gaQuickCreate", lambda page: page.evaluate(
+    "XP.set({view:'groupAddresses'}); XP.openObject('gaGroup','1/2',{pin:true}); XP.actions.gcNew({dataset:{level:'ga',ref:'1/2'}})")),
   ("commissioning", lambda page: page.evaluate(
     "XP.set({workspace:'commissioning', view:'commissioningDevices'}); XP.openObject('commissioningDevice','1.1.4',{pin:true}); XP.queue.enqueue('1.1.5','all')")),
   ("changeAddress", lambda page: page.evaluate(
@@ -1607,9 +1611,10 @@ def test_ga_create(ctx):
   confirm.click()
   assert page.locator("[data-level=main][data-group='4']").inner_text().count("Lüftung") == 1
   assert page.evaluate("XP.state.activeTab") == "gaGroup:4"
-  # detail pane of the new main group: buttons create a middle group in it
+  # detail pane of the new main group: the context menu of its row creates a middle group in it
   assert page.locator("[data-testid=group-title]").inner_text() == "Lüftung"
-  page.click("[data-testid=group-new-mid]")
+  page.click("[data-level=main][data-group='4']", button="right")
+  page.click("[data-testid=context-menu] >> text=Neue Mittelgruppe…")
   assert page.input_value("[data-testid=create-number]") == "0"
   assert page.locator("[data-testid=create-parent]").input_value() == "4"
   page.fill("[data-testid=create-name]", "Zuluft")
@@ -1650,11 +1655,165 @@ def test_ga_create(ctx):
   page.click("[data-testid=context-menu] >> text=Gruppenadresse…")
   assert page.locator("[data-testid=create-parent]").input_value() == "1/2" and page.input_value("[data-testid=create-number]") == "10"
   page.keyboard.press("Escape")
-  # main group detail: both create buttons
+  # main group detail: the row menu of a middle group opens the create dialog for it
   page.click("[data-level=main][data-group='2']")
-  assert page.locator("[data-testid=group-new-mid]").is_visible() and page.locator("[data-testid=group-new-ga]").is_visible()
-  page.click("[data-testid=group-new-ga]")
+  assert page.locator("[data-testid=gc-new]").is_visible()
+  page.click("[data-testid=gc-mid] tr[data-row='2/1']", button="right")
+  page.click("[data-testid=context-menu] >> text=Neue Gruppenadresse…")
   assert page.locator("[data-testid=create-parent]").input_value() == "2/1"
+  page.context.close()
+
+
+@test
+def test_ga_group_tables(ctx):
+  page = ga_page(ctx)
+  # main group detail: its middle groups with counts, summary kept, no create buttons below it
+  page.click("[data-level=main][data-group='1']")
+  tbl = page.locator("[data-testid=gc-mid]")
+  assert page.locator("[data-testid=gc-table] .sec").inner_text() == "Mittelgruppen (2)"
+  assert [t.strip() for t in tbl.locator("thead th").all_inner_texts()] == ["Adresse", "Name", "Gruppenadressen", ""]
+  rows = tbl.locator("tbody tr")
+  assert rows.count() == 2
+  n12 = page.evaluate("XP.data.groupAddresses.filter(g => g.group === '1/2').length")
+  assert rows.nth(1).locator("td").nth(0).inner_text() == "1/2" and rows.nth(1).locator("td").nth(1).inner_text() == "Erdgeschoss"
+  assert rows.nth(1).locator("td").nth(2).inner_text() == str(n12)
+  assert "text-align: right" in rows.nth(1).locator("td").nth(2).evaluate("e => getComputedStyle(e).cssText") or rows.nth(1).locator("td").nth(2).evaluate("e => getComputedStyle(e).textAlign") == "right"
+  assert page.locator("[data-testid=group-range]").is_visible() and page.locator("[data-testid=group-counts]").is_visible()
+  assert page.locator("[data-testid=group-new-mid]").count() == 0 and page.locator("[data-testid=group-new-ga]").count() == 0
+  assert page.locator("[data-testid=group-delete]").count() == 1
+  assert page.locator("[data-testid=group-detail] :is(input,select,textarea)").count() == 0, "no inputs in rows"
+  # row click selects only; the chevron opens the middle group
+  rows.nth(1).locator("td").nth(1).click()
+  assert page.evaluate("XP.state.activeTab") == "gaGroup:1" and rows.nth(1).get_attribute("aria-selected") == "true"
+  # double-click on the name: rename in place
+  rows.nth(1).locator("td").nth(1).dblclick()
+  inp = page.locator("[data-testid=gc-mid] [data-testid=inline-name]")
+  assert inp.input_value() == "Erdgeschoss" and sel_all(page)
+  page.fill("[data-testid=inline-name]", "Parterre")
+  page.keyboard.press("Enter")
+  assert "Parterre" in page.locator("[data-level=mid][data-group='1/2']").inner_text()
+  assert page.evaluate("XP.state.activeTab") == "gaGroup:1"
+  page.focus("[data-testid=gc-mid] tr[data-row='1/2']")
+  page.keyboard.press("Enter")
+  assert page.evaluate("XP.state.activeTab") == "gaGroup:1/2", "Enter opens"
+  # middle group detail: addresses with data type and linked count
+  tbl = page.locator("[data-testid=gc-ga]")
+  assert page.locator("[data-testid=gc-table] .sec").inner_text() == "Gruppenadressen (8)"
+  assert [t.strip() for t in tbl.locator("thead th").all_inner_texts()] == ["Adresse", "Name", "Datentyp", "Verknüpft", ""]
+  r1 = tbl.locator("tbody tr").first
+  assert r1.locator("td").nth(0).inner_text() == "1/2/1" and r1.locator("td").nth(2).inner_text() == "Schalten"
+  nl = page.evaluate("XP.data.devices.reduce((n, d) => n + d.groupObjects.filter(o => o.gas.includes('1/2/1')).length, 0)")
+  assert r1.locator("td").nth(3).inner_text() == (str(nl) if nl else "–")
+  zero = page.evaluate("XP.data.groupAddresses.filter(g => g.group === '1/2').map(g => g.address).find(a => !XP.data.devices.some(d => d.groupObjects.some(o => o.gas.includes(a))))")
+  assert zero and tbl.locator("tr[data-row='%s'] td" % zero).nth(3).inner_text() == "–"
+  # row menu on an address
+  page.click("[data-testid=gc-ga] tr[data-row='1/2/2']", button="right")
+  assert menu_texts(page) == ["Öffnen", "Umbenennen… (F2)", "Adresse ändern…", "Löschen…"], menu_texts(page)
+  page.click("[data-testid=context-menu] >> text=Löschen…")
+  assert page.locator("[data-testid=dialog-title]").inner_text() == "Gruppenadresse löschen"
+  page.click("[data-testid=delete-confirm]")
+  assert page.locator("[data-testid=gc-ga] tr[data-row='1/2/2']").count() == 0
+  assert page.locator("[data-testid=gc-table] .sec").inner_text() == "Gruppenadressen (7)"
+  page.click("[data-testid=gc-ga] tr[data-row='1/2/3']", button="right")
+  page.click("[data-testid=context-menu] >> text=Adresse ändern…")
+  assert page.evaluate("XP.state.activeTab") == "groupAddress:1/2/3" and page.locator("[data-testid=ga-address-input]").is_visible()
+  page.context.close()
+
+
+@test
+def test_ga_quick_create(ctx):
+  page = ga_page(ctx)
+  page.click("[data-level=mid][data-group='1/2']")
+  btn = page.locator("[data-testid=gc-new]")
+  assert btn.inner_text() == "+ Neue Gruppenadresse"
+  btn.click()
+  fresh = page.locator("[data-testid=gc-fresh]")
+  assert fresh.locator("td").first.inner_text() == "1/2/9"
+  inp = page.locator("[data-testid=gc-fresh] [data-testid=inline-name]")
+  assert inp.input_value() == "Neue Gruppenadresse" and sel_all(page)
+  assert page.evaluate("XP.data.groupAddresses.some(g => g.address === '1/2/9')") is False, "nothing created yet"
+  page.keyboard.type("Licht Garage")
+  page.keyboard.press("Enter")
+  # created: tree and counts updated, row selected, detail stays open
+  assert page.evaluate("XP.state.activeTab") == "gaGroup:1/2"
+  assert page.locator("[data-row='1/2/9']").count() == 2  # tree + table
+  assert page.locator("[data-testid=gc-ga] tr[data-row='1/2/9']").get_attribute("aria-selected") == "true"
+  assert page.locator("[data-testid=gc-table] .sec").inner_text() == "Gruppenadressen (9)"
+  assert "9 Gruppenadressen" in page.locator("[data-testid=group-counts]").inner_text()
+  assert page.locator("[data-testid=gc-fresh]").count() == 0
+  assert page.evaluate("document.activeElement.dataset.testid") == "gc-new"
+  # fast serial creation: Enter on "+", then Enter on the name
+  page.keyboard.press("Enter")
+  assert page.locator("[data-testid=gc-fresh] td").first.inner_text() == "1/2/10"
+  page.keyboard.press("Enter")
+  assert page.locator("[data-testid=gc-ga] tr[data-row='1/2/10'] .nm").inner_text() == "Neue Gruppenadresse"
+  # Escape on a fresh row creates nothing
+  page.click("[data-testid=gc-new]")
+  assert page.locator("[data-testid=gc-fresh]").count() == 1
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=gc-fresh]").count() == 0
+  assert page.evaluate("XP.data.groupAddresses.some(g => g.address === '1/2/11')") is False
+  assert page.locator("[data-testid=gc-table] .sec").inner_text() == "Gruppenadressen (10)"
+  # an empty name does not create
+  page.click("[data-testid=gc-new]")
+  page.fill("[data-testid=inline-name]", "")
+  page.keyboard.press("Enter")
+  assert page.locator("[data-testid=inline-error]").is_visible() and page.locator("[data-testid=gc-fresh]").count() == 1
+  page.keyboard.press("Escape")
+  # main group: a middle group at the next free number, then the next one
+  page.click("[data-level=main][data-group='1']")
+  page.click("[data-testid=gc-new]")
+  assert page.locator("[data-testid=gc-fresh] td").first.inner_text() == "1/3"
+  page.fill("[data-testid=inline-name]", "Obergeschoss")
+  page.keyboard.press("Enter")
+  assert page.evaluate("XP.state.activeTab") == "gaGroup:1"
+  assert "Obergeschoss" in page.locator("[data-level=mid][data-group='1/3']").inner_text()
+  assert page.locator("[data-testid=gc-table] .sec").inner_text() == "Mittelgruppen (3)"
+  page.click("[data-testid=gc-new]")
+  assert page.locator("[data-testid=gc-fresh] td").first.inner_text() == "1/4"
+  page.keyboard.press("Escape")
+  # open the new middle group from its row chevron: empty state
+  page.click("[data-testid=gc-mid] tr[data-row='1/3'] [data-testid=gc-open]")
+  assert page.evaluate("XP.state.activeTab") == "gaGroup:1/3"
+  assert page.locator("[data-testid=gc-empty]").inner_text().startswith("Noch keine Gruppenadressen")
+  empty_btn = page.locator("[data-testid=gc-empty] [data-testid=gc-new]")
+  assert "primary" in empty_btn.get_attribute("class")
+  empty_btn.click()
+  assert page.locator("[data-testid=gc-fresh] td").first.inner_text() == "1/3/1"
+  page.keyboard.press("Enter")
+  assert page.locator("[data-testid=gc-empty]").count() == 0 and page.locator("[data-testid=gc-ga] tr[data-row='1/3/1']").count() == 1
+  page.context.close()
+
+
+@test
+def test_ga_quick_create_full(ctx):
+  page = ga_page(ctx)
+  page.evaluate("""(() => { const m = XP.data.groups[0];
+    for (let i = 0; i < 8; i++) if (!m.children.some(c => c.id === '1/' + i)) m.children.push({ id: '1/' + i, name: 'Mittel ' + i });
+    const g = '1/1';
+    for (let i = 0; i < 256; i++) if (!XP.data.groupAddresses.some(a => a.address === g + '/' + i)) XP.data.groupAddresses.push({ id: g + '/' + i, address: g + '/' + i, group: g, name: 'A' + i, dpt: '1.001' });
+    XP.set({}); })()""")
+  page.click("[data-level=main][data-group='1']")
+  assert page.locator("[data-testid=gc-new]").is_disabled()
+  assert "0–7" in page.locator("[data-testid=gc-full]").inner_text()
+  page.click("[data-level=mid][data-group='1/1']")
+  assert page.locator("[data-testid=gc-new]").is_disabled()
+  assert "0–255" in page.locator("[data-testid=gc-full]").inner_text()
+  page.context.close()
+
+
+@test
+def test_ga_group_tables_narrow(ctx):
+  page = ga_page(ctx, 400, 860)
+  page.click("[data-level=mid][data-group='1/2']")
+  heads = page.evaluate("[...document.querySelectorAll('[data-testid=gc-ga] thead th')].filter(t => t.offsetParent).map(t => t.textContent.trim())")
+  assert heads == ["Adresse", "Name", "Verknüpft", ""], heads
+  assert page.locator("[data-testid=gc-ga] thead th", has_text="Datentyp").is_hidden()
+  assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+  b = page.locator("[data-testid=gc-open]").first.bounding_box()
+  assert b["height"] >= 24 and b["width"] >= 24
+  page.locator("[data-testid=gc-open]").first.click()
+  assert page.evaluate("XP.state.activeTab") == "groupAddress:1/2/1"
   page.context.close()
 
 
@@ -1668,7 +1827,7 @@ def test_ga_group_detail_rename_delete(ctx):
   assert page.locator("[data-testid=group-counts]").inner_text() == "2 Mittelgruppen · 16 Gruppenadressen"
   assert det.locator(":is(input,select,textarea)").count() == 0
   # rename a main group: the detail button starts inline rename of the title
-  page.click("[data-testid=group-rename]")
+  page.click("[data-testid=rename-btn]")
   assert page.locator("[data-testid=dialog]").count() == 0, "no rename dialog any more"
   page.fill("[data-testid=inline-name]", "Klima")
   page.keyboard.press("Enter")

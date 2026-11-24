@@ -15,7 +15,9 @@
   S.goSelectMode = null;  /* device address in touch multi-select: a tap toggles rows until "Fertig" */
   S.listFilter = "";
   S.gaFilter = "";
-  S.inl = null;         /* inline rename: { type: device|ga|gaGroup, ref, where: row|head, value, orig, err } */
+  S.inl = null;         /* inline rename: { type: device|ga|gaGroup, ref, where: row|head|tbl, value, orig, err } */
+  S.fresh = null;       /* quick create in a group detail table: { level, parent, id }, the row is not created yet */
+  S.gcSel = null;       /* selected row (ref) in the table of a group detail */
   S.addrEdit = null;    /* group address being re-addressed: { ref, value } */
 
   var DPT = {
@@ -78,15 +80,17 @@
     var i = document.querySelector(".inl-input[data-inl=name]");
     if (!i) return;
     i.focus({ preventScroll: true });
+    if (i.closest(".tbl")) i.scrollIntoView({ block: "nearest" });
     if (all) i.select(); else i.setSelectionRange(i.value.length, i.value.length);
   }
   function focusBack(i) {
-    var n = document.querySelector('[data-fk="' + (i.where === "row" ? "row:" + i.ref : "rename-btn") + '"]');
+    var fk = i.where === "row" ? "row:" + i.ref : i.where === "tbl" ? (i.fresh ? "gc-new" : "tr:" + i.ref) : "rename-btn";
+    var n = document.querySelector('[data-fk="' + fk + '"]');
     if (n) n.focus({ preventScroll: true });
   }
   function startRename(type, ref, where) {
     var name = currentName(type, ref);
-    var patch = { inl: { type: type, ref: ref, where: where, value: name, orig: name, err: "" }, addrEdit: null };
+    var patch = { inl: { type: type, ref: ref, where: where, value: name, orig: name, err: "" }, addrEdit: null, fresh: null };
     if (where === "head") patch.inspectorOpen = false;
     XP.set(patch);
     focusInline(true);
@@ -95,14 +99,15 @@
   function cancelInline() {
     var i = S.inl;
     if (!i) return;
-    XP.set({ inl: null });
+    XP.set(i.fresh ? { inl: null, fresh: null, gcSel: null } : { inl: null });   /* a fresh row that is abandoned creates nothing */
     focusBack(i);
   }
   function commitInline() {
     var i = S.inl;
     if (!i) return;
     var name = String(i.value || "").trim();
-    if (!name) { i.err = "Der Name darf nicht leer sein. Escape stellt den alten Namen wieder her."; XP.set({}); focusInline(false); return; }
+    if (!name) { i.err = i.fresh ? "Der Name darf nicht leer sein. Escape verwirft die neue Zeile." : "Der Name darf nicht leer sein. Escape stellt den alten Namen wieder her."; XP.set({}); focusInline(false); return; }
+    if (i.fresh) { commitFresh(i, name); return; }
     if (name === i.orig) { cancelInline(); return; }
     if (i.type === "device") dev(i.ref).name = name;
     else if (i.type === "ga") gaOf(i.ref).name = name;
@@ -110,6 +115,15 @@
     /* renaming is an edit: the preview tab of this object becomes a pinned one */
     var tid = KIND[i.type] + ":" + i.ref;
     XP.set({ inl: null, tabs: S.tabs.map(function (t) { return t.id === tid ? Object.assign({}, t, { pinned: true }) : t; }) });
+    focusBack(i);
+  }
+  /* Enter on a fresh row of a group detail table creates the entry; the row stays selected and the
+     detail stays open, the focus goes to "+" so the next one is one key press away. */
+  function commitFresh(i, name) {
+    var f = S.fresh, level = f.level, taken = level === "mid" ? findGroup(f.id) : gaOf(f.id);
+    if (taken) { cancelInline(); return; }
+    insertItem(level, f.parent, f.id, name);
+    XP.set({ inl: null, fresh: null, gcSel: f.id });
     focusBack(i);
   }
   /* re-render while typing, keeping the caret */
@@ -458,44 +472,50 @@
     var key = function (g) { return g.address.split("/").map(function (n) { return ("000" + n).slice(-3); }).join("/"); };
     XP.data.groupAddresses.sort(function (a, b) { return key(a) < key(b) ? -1 : 1; });
   }
+  /* the one place that creates a group or an address (create dialog and quick create) */
+  function insertItem(level, parent, id, name) {
+    var data = XP.data, open = Object.assign({}, S.gaOpen);
+    S.gaFilter = "";
+    if (level === "main") {
+      data.groups.push({ id: id, name: name, children: [] });
+      data.groups.sort(function (a, b) { return +a.id - +b.id; });
+    } else if (level === "mid") {
+      var m = findGroup(parent).g;
+      m.children.push({ id: id, name: name });
+      m.children.sort(function (a, b) { return +a.id.split("/")[1] - +b.id.split("/")[1]; });
+      open[parent] = true;
+    } else {
+      data.groupAddresses.push({ id: id, address: id, group: parent, name: name, dpt: "1.001" });
+      sortGa();
+      open[parent] = true; open[parent.split("/")[0]] = true;
+    }
+    S.gaOpen = open;
+  }
   function applyCreate() {
     var d = S.dialog, c = createCheck(d);
     if (!c.ok) return false;
-    var name = d.name.trim(), id = c.id, data = XP.data, open = Object.assign({}, S.gaOpen);
-    S.gaFilter = "";
-    if (d.level === "main") {
-      data.groups.push({ id: id, name: name, children: [] });
-      data.groups.sort(function (a, b) { return +a.id - +b.id; });
-    } else if (d.level === "mid") {
-      var m = findGroup(d.parent).g;
-      m.children.push({ id: id, name: name });
-      m.children.sort(function (a, b) { return +a.id.split("/")[1] - +b.id.split("/")[1]; });
-      open[d.parent] = true;
-    } else {
-      data.groupAddresses.push({ id: id, address: id, group: d.parent, name: name, dpt: "1.001" });
-      sortGa();
-      open[d.parent] = true; open[d.parent.split("/")[0]] = true;
-    }
-    S.gaOpen = open;
+    var id = c.id;
+    insertItem(d.level, d.parent, id, d.name.trim());
     S.dialog = null;
     XP.set({ dialog: null });
     XP.openObject(d.level === "ga" ? "groupAddress" : "gaGroup", id, { pin: false });
     return true;
   }
   function openDelete(id) {
-    if (findGroup(id)) XP.openDialog("gaDelete", { ref: id });
+    if (findGroup(id) || gaOf(id)) XP.openDialog("gaDelete", { ref: id });
   }
   function applyDelete() {
     var id = S.dialog.ref, f = findGroup(id);
-    if (!f) return;
-    var gone = gasIn(id).map(function (g) { return g.address; });
-    var ids = [id];
-    if (f.level === "main") f.g.children.forEach(function (c) { ids.push(c.id); });
+    if (!f && !gaOf(id)) return;
+    var gone = f ? gasIn(id).map(function (g) { return g.address; }) : [id];
+    var ids = f ? [id] : [];
+    if (f && f.level === "main") f.g.children.forEach(function (c) { ids.push(c.id); });
     XP.data.groupAddresses = XP.data.groupAddresses.filter(function (g) { return gone.indexOf(g.address) < 0; });
     XP.data.devices.forEach(function (dv) {
       dv.groupObjects.forEach(function (o) { o.gas = o.gas.filter(function (a) { return gone.indexOf(a) < 0; }); });
     });
-    if (f.level === "main") XP.data.groups = XP.data.groups.filter(function (m) { return m.id !== id; });
+    if (!f) { /* a single address: already removed above */ }
+    else if (f.level === "main") XP.data.groups = XP.data.groups.filter(function (m) { return m.id !== id; });
     else f.main.children = f.main.children.filter(function (c) { return c.id !== id; });
     var sel = Object.assign({}, S.selection);
     if (gone.indexOf(sel.groupAddress) >= 0) sel.groupAddress = null;
@@ -514,17 +534,53 @@
   function groupRange(f) {
     return f.level === "main" ? f.g.id + "/0/0 – " + f.g.id + "/7/255" : f.g.id + "/0 – " + f.g.id + "/255";
   }
+  /* ---- the children of a group as a table, with quick create ---- */
+  var QC = {
+    mid: { type: "gaGroup", kind: "gcMid", title: "Mittelgruppen", empty: "Noch keine Mittelgruppen", add: "+ Neue Mittelgruppe", def: "Neue Mittelgruppe", full: "Alle Mittelgruppen 0–7 sind vergeben." },
+    ga: { type: "ga", kind: "gcGa", title: "Gruppenadressen", empty: "Noch keine Gruppenadressen", add: "+ Neue Gruppenadresse", def: "Neue Gruppenadresse", full: "Alle Adressen 0–255 sind vergeben." },
+  };
+  function childItems(f) {
+    var main = f.level === "main", num = function (id) { return +id.split("/")[main ? 1 : 2]; };
+    var items = main
+      ? f.g.children.map(function (c) { return { ref: c.id, name: c.name, count: gasIn(c.id).length }; })
+      : XP.data.groupAddresses.filter(function (g) { return g.group === f.g.id; }).map(function (g) { return { ref: g.address, name: g.name, dpt: dptName(g.dpt), links: linksOf(g.address).length }; });
+    if (S.fresh && S.fresh.parent === f.g.id && S.inl && S.inl.fresh) items.push({ ref: S.fresh.id, name: "", fresh: true });
+    return items.sort(function (a, b) { return num(a.ref) - num(b.ref); });
+  }
+  function gcName(q, it) {
+    var i = inlOn(q.type, it.ref, "tbl");
+    return i ? h`<span class="nm">${nameInput(i, "")}</span>${inlErr(i)}` : h`<span class="nm trunc">${it.name}</span>`;
+  }
+  function gcRow(q, main, it, first) {
+    var open = h`<td class="go">${it.fresh ? "" : h`<button class="btn ico" data-testid="gc-open" data-action="gcOpen" data-ref="${it.ref}" data-kind="${q.kind}" aria-label="${it.name} öffnen" title="Öffnen" tabindex="-1">›</button>`}</td>`;
+    var cells = main
+      ? h`<td class="nmc">${gcName(q, it)}</td><td class="r">${it.fresh ? "" : it.count}</td>`
+      : h`<td class="nmc">${gcName(q, it)}</td><td class="typ col-typ">${it.dpt || ""}</td><td class="r ${it.links ? "" : "dis"}">${it.fresh ? "" : it.links || "–"}</td>`;
+    var addr = h`<td class="adr mono">${it.ref}</td>`;
+    if (it.fresh) return h`<tr class="sel" data-testid="gc-fresh" data-fk="tr-fresh" aria-selected="true">${addr}${cells}${open}</tr>`;
+    var on = S.gcSel === it.ref;
+    return h`<tr class="${on ? "sel" : ""}" data-row="${it.ref}" data-kind="${q.kind}" data-fk="tr:${it.ref}" tabindex="${on || (first && !S.gcSel) ? 0 : -1}" aria-selected="${String(on)}">${addr}${cells}${open}</tr>`;
+  }
+  function childTable(f) {
+    var main = f.level === "main", q = QC[main ? "mid" : "ga"], items = childItems(f);
+    var real = items.filter(function (x) { return !x.fresh; }).length, free = nextFree(q.kind === "gcMid" ? "mid" : "ga", f.g.id);
+    var add = h`<button class="btn ${items.length ? "bordered" : "primary"}" data-testid="gc-new" data-fk="gc-new" data-action="gcNew" data-level="${main ? "mid" : "ga"}" data-ref="${f.g.id}" ${free === null ? "disabled" : ""}>${q.add}</button>`;
+    var bar = h`<div class="tbl-bar"><span class="sec">${q.title} (${real})</span><span class="spacer"></span>${free === null ? h`<span class="t-caption" data-testid="gc-full">${q.full}</span>` : ""}${items.length ? add : ""}</div>`;
+    if (!items.length) return h`<div class="gc" data-testid="gc-table">${bar}<div class="empty gc-empty" data-testid="gc-empty"><div class="t-title">${q.empty}</div>${add}${free === null ? h`<div class="t-caption">${q.full}</div>` : ""}</div></div>`;
+    var head = main
+      ? h`<th class="adr">Adresse</th><th>Name</th><th class="r">Gruppenadressen</th><th class="go"></th>`
+      : h`<th class="adr">Adresse</th><th>Name</th><th class="col-typ">Datentyp</th><th class="r">Verknüpft</th><th class="go"></th>`;
+    return h`<div class="gc" data-testid="gc-table">${bar}<table class="tbl gc-tbl" data-testid="${main ? "gc-mid" : "gc-ga"}" aria-label="${q.title}"><thead><tr>${head}</tr></thead><tbody>${items.map(function (it, n) { return gcRow(q, main, it, n === 0); })}</tbody></table></div>`;
+  }
   XP.VIEWS.gaGroup = {
     label: "Gruppe", icon: "⌗",
     tabLabel: function (ref) { var f = findGroup(ref); return f ? ref + " " + f.g.name : ref; },
     editor: function (tab) {
       var f = findGroup(tab.ref);
       if (!f) return h`<div class="empty">Gruppe nicht gefunden.</div>`;
-      var main = f.level === "main", hasMid = XP.data.groups.some(function (m) { return m.children.length; });
+      var main = f.level === "main";
       var head = h`<div class="dev-head"><div class="dh-t">${titleBlock("gaGroup", f.g.id, f.g.name, "group-title")}<div class="t-caption wrap"><span class="mono">${f.g.id}</span> · ${main ? "Hauptgruppe" : "Mittelgruppe"}</div></div></div>`;
-      var body = h`<div class="grp-body" data-testid="group-detail"><div class="callout"><div><div class="t-label">Adressbereich</div><div class="mono" data-testid="group-range">${groupRange(f)}</div></div><div><div class="t-label">Enthält</div><div data-testid="group-counts">${groupCounts(f)}</div></div></div>
-        <div class="grp-actions">${main ? h`<button class="btn bordered" data-testid="group-new-mid" data-fk="group-new-mid" data-action="gaNewIn" data-level="mid" data-ref="${f.g.id}">Neue Mittelgruppe…</button>` : ""}<button class="btn bordered" data-testid="group-new-ga" data-fk="group-new-ga" data-action="gaNewIn" data-level="ga" data-ref="${f.g.id}" ${main && !f.g.children.length ? "disabled" : ""}>Neue Gruppenadresse…</button></div>
-        <div class="grp-actions"><button class="btn bordered" data-testid="group-rename" data-fk="group-rename" data-action="rename" data-type="gaGroup" data-ref="${f.g.id}">Umbenennen… (F2)</button><button class="btn bordered" data-testid="group-delete" data-fk="group-delete" data-action="gaDelete" data-ref="${f.g.id}">Löschen…</button></div>${main && !f.g.children.length && hasMid ? h`<div class="t-caption">Lege zuerst eine Mittelgruppe an, um Gruppenadressen hinzuzufügen.</div>` : ""}</div>`;
+      var body = h`<div class="grp-body" data-testid="group-detail"><div class="callout"><div><div class="t-label">Adressbereich</div><div class="mono" data-testid="group-range">${groupRange(f)}</div></div><div><div class="t-label">Enthält</div><div data-testid="group-counts">${groupCounts(f)}</div></div><div class="callout-foot"><button class="btn danger" data-testid="group-delete" data-fk="group-delete" data-action="gaDelete" data-ref="${f.g.id}">Löschen…</button></div></div>${childTable(f)}</div>`;
       return h`<div class="dev">${head}<div class="dev-body"><div class="dev-main">${body}</div></div></div>`;
     },
   };
@@ -683,6 +739,15 @@
         { label: "Umbenennen… (F2)", disabled: !one, run: function () { openRename("go", ref); } },
       ];
     }
+    if (kind === "gcMid" || kind === "gcGa") {
+      var mid = kind === "gcMid", tp = mid ? "gaGroup" : "ga", okind = mid ? "gaGroup" : "groupAddress";
+      if (S.gcSel !== ref) XP.set({ gcSel: ref });
+      return [
+        { label: "Öffnen", run: function () { XP.openObject(okind, ref, { pin: false }); } },
+        { label: "Umbenennen… (F2)", run: function () { startRename(tp, ref, "tbl"); } },
+      ].concat(mid ? [{ label: "Neue Gruppenadresse…", run: function () { openCreate("ga", ref); } }] : [{ label: "Adresse ändern…", run: function () { XP.openObject(okind, ref, { pin: false }); startAddrEdit(ref); } }],
+        [{ label: "Löschen…", run: function () { openDelete(ref); } }]);
+    }
     var name = kind === "device" ? "device" : kind === "gaGroup" ? "gaGroup" : "ga";
     var base = [
       { label: "Öffnen", run: function () { XP.openObject(kind, ref, { pin: false }); } },
@@ -773,7 +838,15 @@
     };
   };
   XP.dialogKinds.gaDelete = function (d) {
-    var f = findGroup(d.ref);
+    var f = findGroup(d.ref), ga = !f && gaOf(d.ref);
+    if (ga) {
+      var nl = linksOf(ga.address).length;
+      return {
+        title: "Gruppenadresse löschen", sub: ga.address + " " + ga.name, width: 480,
+        body: h`<div class="wrap" data-testid="delete-summary">Die Gruppenadresse wird entfernt.${nl ? h` ${plural(nl, "Verknüpfung", "Verknüpfungen")} mit Gruppenobjekten gehen verloren.` : ""}</div><div class="t-caption">Das Löschen lässt sich im Verlauf rückgängig machen.</div>`,
+        actions: h`<button class="btn" data-action="closeDialog" data-testid="dlg-cancel">Abbrechen</button><button class="btn primary" data-testid="delete-confirm" data-fk="dlg-primary" data-action="confirmDelete">Gruppenadresse löschen</button>`,
+      };
+    }
     if (!f) return { title: "Löschen", width: 480, body: h`<div class="t-caption">Gruppe nicht gefunden.</div>`, actions: h`<button class="btn" data-action="closeDialog">Schließen</button>` };
     var n = gasIn(d.ref).length, links = 0;
     XP.data.devices.forEach(function (dv) { dv.groupObjects.forEach(function (o) { o.gas.forEach(function (a) { if (a.split("/")[0] === d.ref || a.split("/").slice(0, 2).join("/") === d.ref) links++; }); }); });
@@ -826,6 +899,14 @@
     XP.contextMenu(createItems(gaContext(S)), r.left, r.bottom);
   };
   A.gaNewIn = function (el) { openCreate(el.dataset.level, el.dataset.ref); };
+  A.gcNew = function (el) {
+    var level = el.dataset.level, parent = el.dataset.ref, n = nextFree(level, parent);
+    if (n === null) return;
+    var id = fullId(level, parent, n), name = QC[level].def;
+    XP.set({ fresh: { level: level, parent: parent, id: id }, gcSel: id, addrEdit: null, inl: { type: QC[level].type, ref: id, where: "tbl", value: name, orig: name, err: "", fresh: true } });
+    focusInline(true);
+  };
+  A.gcOpen = function (el) { XP.openObject(el.dataset.kind === "gcMid" ? "gaGroup" : "groupAddress", el.dataset.ref, { pin: false }); };
   A.gaDelete = function (el) { openDelete(el.dataset.ref); };
   A.confirmCreate = function () { applyCreate(); };
   A.confirmDelete = function () { applyDelete(); };
@@ -888,12 +969,16 @@
     var app = document.getElementById("app");
 
     app.addEventListener("click", function (e) {
+      var gc = e.target.closest("tr[data-kind=gcMid],tr[data-kind=gcGa]");
+      if (gc && !e.target.closest(".inl-input,[data-action]")) { XP.set({ gcSel: gc.dataset.row }); var again = document.querySelector('[data-fk="tr:' + gc.dataset.row + '"]'); if (again) again.focus({ preventScroll: true }); return; }
       var tr = e.target.closest("tr[data-kind=go]");
       if (!tr) return;
       var d = curDev();
       if (d) selectGo(d, tr.dataset.row, S.goSelectMode === d.address ? "toggle" : e.shiftKey ? "range" : (e.ctrlKey || e.metaKey) ? "toggle" : "single");
     });
     app.addEventListener("dblclick", function (e) {
+      var gcn = e.target.closest("tr[data-kind=gcMid] .nmc,tr[data-kind=gcGa] .nmc");
+      if (gcn && !e.target.closest(".inl-input")) { var gr = gcn.closest("tr"); startRename(gr.dataset.kind === "gcMid" ? "gaGroup" : "ga", gr.dataset.row, "tbl"); return; }
       var tt = e.target.closest("[data-rename-title]");
       if (tt) { var p = tt.dataset.renameTitle.split(":"); startRename(p[0], p.slice(1).join(":"), "head"); return; }
       var d = curDev();
@@ -1005,6 +1090,19 @@
 
     /* Keyboard: group object table, F2, dialogs. */
     app.addEventListener("keydown", function (e) {
+      var gr = e.target.closest && e.target.closest("tr[data-kind=gcMid],tr[data-kind=gcGa]");
+      if (gr && e.target === gr) {
+        var rows = Array.prototype.slice.call(gr.parentNode.querySelectorAll("tr[data-row]")), k = rows.indexOf(gr), m = -1;
+        if (e.key === "Enter") { e.preventDefault(); A.gcOpen({ dataset: { kind: gr.dataset.kind, ref: gr.dataset.row } }); return; }
+        if (e.key === "ArrowDown") m = Math.min(rows.length - 1, k + 1);
+        else if (e.key === "ArrowUp") m = Math.max(0, k - 1);
+        if (m < 0) return;
+        e.preventDefault();
+        XP.set({ gcSel: rows[m].dataset.row });
+        var nx = document.querySelector('[data-fk="tr:' + rows[m].dataset.row + '"]');
+        if (nx) { nx.focus(); nx.scrollIntoView({ block: "nearest" }); }
+        return;
+      }
       var tr = e.target.closest("tr[data-kind=go]");
       if (!tr) return;
       var d = curDev();
@@ -1055,6 +1153,8 @@
         if (d && selObjects(d).length === 1) { e.preventDefault(); openRename("go", selObjects(d)[0].id); }
         return;
       }
+      var gcr = t && t.closest("tr[data-kind=gcMid],tr[data-kind=gcGa]");
+      if (gcr) { e.preventDefault(); startRename(gcr.dataset.kind === "gcMid" ? "gaGroup" : "ga", gcr.dataset.row, "tbl"); return; }
       var row = t && t.closest(".list [data-row]");
       if (row && TYPE[row.dataset.kind]) { e.preventDefault(); startRename(TYPE[row.dataset.kind], row.dataset.row, "row"); return; }
       /* focus in the editor: rename the title of the open object */

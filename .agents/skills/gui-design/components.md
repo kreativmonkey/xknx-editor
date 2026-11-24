@@ -97,6 +97,19 @@ Telegrams, log lines and bus events are transient records, not project objects:
   or a context-menu "Copy".
 - Column widths are explicit. Optional columns are hidden through the header menu.
 
+## Container detail with children (group detail)
+
+The detail of a container shows its summary first, then its children as a table with a count in
+the title ("Gruppenadressen (8)"). A row click selects, the name opens an inline rename on
+double-click, and a visible chevron or Enter opens the child. The row menu (right click, long
+press) offers Open, Rename and the child-specific actions.
+- Quick create: "+ New …" in the table header inserts a row at the next free number with a default
+  name and starts the rename with the name selected. Enter creates it, stays on the detail and
+  keeps the row selected, focus returns to "+". Escape on the fresh row creates nothing.
+- When no number is free the button is disabled and the reason stands next to it. An empty
+  container shows an empty state with the same button as the primary action.
+- Narrow: optional columns drop out, the chevron stays. Delete lives once, in the summary footer.
+
 ## Navigation list rows (findings, search results, recent files)
 
 For rows that jump somewhere instead of being selected:

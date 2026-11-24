@@ -135,6 +135,8 @@ takes them over.
   open) and "+ Neu ▾" (main group, middle group, address). A main or middle group opens a detail
   pane (range, counts, create, rename, delete with the number of removed addresses). The same
   entries are in the tree's context menu; names of all levels are renamed inline (double-click, F2, ✎).
+  The detail of a group lists its children as a table (middle groups, or addresses with data type and
+  link count) with quick create in the table header: a new row at the next free number, named inline, Enter creates and stays.
 
 ### Workspaces
 | Workspace | Sidebar | List shows | Main action / focus | Hidden |
