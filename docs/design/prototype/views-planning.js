@@ -238,8 +238,8 @@
       if (!g) return h`<div class="empty">Gruppenadresse nicht gefunden.</div>`;
       var links = linksOf(g.address);
       var head = h`<div class="dev-head"><div class="dh-t"><div class="t-heading wrap" data-testid="ga-title">${g.name}</div><div class="t-caption wrap"><span class="mono">${g.address}</span> · ${g.dpt} ${dptName(g.dpt)}</div></div><span class="spacer"></span>${inspectorButton(0)}</div>`;
-      var body = h`<div class="dev-main"><div class="pbar"><span class="sec">Verknüpfte Gruppenobjekte (${links.length})</span></div><div class="tblwrap" data-scroll="tbl">${links.length ? h`<table class="tbl" data-testid="ga-links"><thead><tr><th>Gerät</th><th>Objekt</th><th>Typ</th><th>Flags</th></tr></thead><tbody>${links.map(function (l) {
-        return h`<tr><td class="nmc"><button class="link-btn" data-action="gotoGo" data-dev="${l.d.address}" data-go="${l.o.id}" title="${l.d.address} ${l.d.name}"><span class="mono">${l.d.address}</span> ${l.d.name}</button></td><td class="nmc" title="${l.o.name}">${l.o.name}</td><td>${dptName(l.o.dpt)}</td><td class="flags">${flagsHtml(l.o.flags)}</td></tr>`;
+      var body = h`<div class="dev-main"><div class="pbar"><span class="sec">Verknüpfte Gruppenobjekte (${links.length})</span></div><div class="tblwrap" data-scroll="tbl">${links.length ? h`<table class="tbl" data-testid="ga-links"><thead><tr><th>Gerät</th><th>Objekt</th><th class="col-typ">Typ</th><th>Flags</th></tr></thead><tbody>${links.map(function (l) {
+        return h`<tr><td class="nmc"><button class="link-btn" data-action="gotoGo" data-dev="${l.d.address}" data-go="${l.o.id}" title="${l.d.address} ${l.d.name}"><span class="mono">${l.d.address}</span> ${l.d.name}</button></td><td class="nmc" title="${l.o.name}">${l.o.name}</td><td class="col-typ">${dptName(l.o.dpt)}</td><td class="flags">${flagsHtml(l.o.flags)}</td></tr>`;
       })}</tbody></table>` : h`<div class="empty" data-testid="ga-links"><div class="t-title">Nicht verknüpft</div><div>Diese Gruppenadresse ist mit keinem Gruppenobjekt verbunden.</div></div>`}</div></div>`;
       return frame(head, body, gaInspector(g));
     },
@@ -558,6 +558,7 @@
         if (menuEl) { XP.closeContextMenu(); e.stopPropagation(); return; }
         var dk = S.dialog && S.dialog.kind;
         if (dk === "rename" || dk === "link") { XP.set({ dialog: null }); e.stopPropagation(); return; }
+        if (S.paletteOpen || S.dialog) return;
         if (S.inspectorOpen) { XP.set({ inspectorOpen: false }); e.stopPropagation(); }
         return;
       }

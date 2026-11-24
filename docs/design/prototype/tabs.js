@@ -25,7 +25,7 @@
     }
     var sel = Object.assign({}, s.selection);
     sel[kind] = ref;
-    XP.set({ tabs: tabs, activeTab: id, selection: sel, stackEditor: true, drawerOpen: false });
+    XP.set({ tabs: tabs, activeTab: id, selection: sel, stackEditor: true, drawerOpen: false, inspectorOpen: false });
   };
 
   XP.activateTab = function (id) {

@@ -102,10 +102,16 @@
   var gas = ["1/2/3", "1/2/2", "2/1/1", "3/1/3", "1/1/1", "2/2/1", "3/2/1"];
   var srcs = ["1.1.12", "1.1.6", "1.1.4", "1.2.2", "1.1.5"];
   var types = ["Write", "Write", "Write", "Read", "Response"];
+  /* strictly increasing: 12:10:00.000 plus 1.3 s to 1.5 s per telegram */
+  function clock(n) {
+    var ms = (12 * 3600 + 10 * 60) * 1000 + n * 1300 + (n * 37) % 200;
+    var p = function (v, w) { return String(v).padStart(w, "0"); };
+    return p(Math.floor(ms / 3600000), 2) + ":" + p(Math.floor(ms / 60000) % 60, 2) + ":" + p(Math.floor(ms / 1000) % 60, 2) + "." + p(ms % 1000, 3);
+  }
   for (var i = 0; i < 30; i++) {
     var dpt = gas[i % gas.length].charAt(0) === "3" ? "9.001" : gas[i % gas.length].charAt(0) === "2" ? "5.001" : "1.001";
     var val = dpt === "9.001" ? (20 + (i % 5) * 0.5).toFixed(1) + " °C" : dpt === "5.001" ? (i * 7 % 100) + " %" : (i % 2 ? "Ein" : "Aus");
-    tg.push({ id: i + 1, time: "12:" + String(10 + Math.floor(i / 6)).padStart(2, "0") + ":" + String((i * 9) % 60).padStart(2, "0") + "." + String((i * 137) % 1000).padStart(3, "0"),
+    tg.push({ id: i + 1, time: clock(i),
       src: srcs[i % srcs.length], dst: gas[i % gas.length], type: types[i % types.length], dpt: dpt, value: val,
       raw: "0x" + (i * 17 % 256).toString(16).padStart(2, "0") });
   }

@@ -143,13 +143,15 @@
       if (XP.formFactor() !== before) { if (XP.state.navOpen) XP.state.navOpen = false; XP.render(); }
     });
     document.addEventListener("keydown", function (e) {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || e.defaultPrevented) return;
       var s = XP.state, p = {};
+      /* the palette, flow dialogs and context menus consume Escape: one press closes one layer */
+      if (s.paletteOpen || (s.dialog && s.dialog.kind !== "saveWorkspace") || document.querySelector("[data-testid=context-menu]")) return;
+      if (s.dialog && s.dialog.kind === "saveWorkspace") { XP.set({ dialog: null }); return; }
       if (s.wsMenuOpen) p.wsMenuOpen = false;
       if (s.viewMenuOpen) p.viewMenuOpen = false;
       if (s.drawerOpen) p.drawerOpen = false;
       if (s.navOpen) p.navOpen = false;
-      if (s.dialog && s.dialog.kind === "saveWorkspace") p.dialog = null;
       if (Object.keys(p).length) XP.set(p);
     });
     document.addEventListener("keydown", function (e) {

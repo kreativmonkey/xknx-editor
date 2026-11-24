@@ -150,7 +150,7 @@
         return;
       }
       if (!S.paletteOpen) return;
-      if (e.key === "Escape") { e.preventDefault(); XP.palette.close(); }
+      if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); XP.palette.close(); }
       else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         if (!items.length) return;

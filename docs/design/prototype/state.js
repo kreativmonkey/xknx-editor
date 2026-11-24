@@ -38,15 +38,18 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   };
-  function part(v) {
+  /* Inside an attribute value (the text before ends in `="`), booleans render as "true"/"false"
+     (aria-selected, aria-checked, aria-expanded need the "false"); elsewhere false means nothing. */
+  function part(v, inAttr) {
     if (v instanceof Safe) return v.s;
-    if (Array.isArray(v)) return v.map(part).join("");
-    if (v === null || v === undefined || v === false) return "";
+    if (Array.isArray(v)) return v.map(function (x) { return part(x, inAttr); }).join("");
+    if (v === true || v === false) return inAttr ? String(v) : "";
+    if (v === null || v === undefined) return "";
     return XP.esc(v);
   }
   XP.h = function (strings) {
     var out = strings[0];
-    for (var i = 1; i < arguments.length; i++) out += part(arguments[i]) + strings[i];
+    for (var i = 1; i < arguments.length; i++) out += part(arguments[i], /=["']$/.test(strings[i - 1])) + strings[i];
     return new Safe(out);
   };
 
@@ -90,6 +93,8 @@
     } catch (e) { /* ignore broken data */ }
   };
   XP.set = function (patch) {
+    /* a search highlight belongs to one visit of the settings page */
+    if (!("highlight" in patch) && ((patch.view !== undefined && patch.view !== XP.state.view) || patch.activeTab)) patch.highlight = null;
     Object.assign(XP.state, patch);
     persist();
     XP.render();

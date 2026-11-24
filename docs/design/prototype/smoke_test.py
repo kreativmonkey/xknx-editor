@@ -1164,6 +1164,86 @@ def go_workspace(page, ws):
   page.click(f"[data-ws={ws}]")
 
 
+@test
+def test_h_renders_false_aria_values(ctx):
+  page = ctx.page()
+  out = page.evaluate("String(XP.h`<i aria-selected=\"${false}\" aria-checked=\"${true}\">${false}x</i>`)")
+  assert out == '<i aria-selected="false" aria-checked="true">x</i>', out
+  assert page.locator("[data-testid=ws-switcher]").get_attribute("aria-expanded") == "false"
+  page.context.close()
+
+
+@test
+def test_escape_consumed_by_palette_and_dialog(ctx):
+  page = ctx.page(800, 900)
+  page.evaluate("XP.set({drawerOpen:true})")
+  page.evaluate("XP.palette.open('')")
+  page.keyboard.press("Escape")
+  assert page.evaluate("XP.state.paletteOpen") is False
+  assert page.evaluate("XP.state.drawerOpen") is True, "palette Escape also closed the drawer"
+  page.evaluate("XP.set({drawerOpen:true, workspace:'commissioning', view:'commissioningDevices'}); XP.openDialog('changeAddress',{ref:'1.1.4'})")
+  page.keyboard.press("Escape")
+  assert page.evaluate("XP.state.dialog") is None
+  assert page.evaluate("XP.state.drawerOpen") is True, "dialog Escape also closed the drawer"
+  page.keyboard.press("Escape")
+  assert page.evaluate("XP.state.drawerOpen") is False
+  page.context.close()
+
+
+@test
+def test_inspector_and_highlight_reset(ctx):
+  page = ctx.page(800, 900)
+  page.evaluate("XP.openObject('device','1.1.4',{pin:true}); XP.set({inspectorOpen:true})")
+  page.evaluate("XP.openObject('device','1.1.5',{pin:true})")
+  assert page.evaluate("XP.state.inspectorOpen") is False
+  page.evaluate("XP.openSetting('t-ack')")
+  assert page.evaluate("XP.state.highlight") == "t-ack"
+  page.evaluate("XP.set({view:'devices'})")
+  assert page.evaluate("XP.state.highlight") is None
+  page.context.close()
+
+
+@test
+def test_settings_design_row_switches_theme(ctx):
+  page = ctx.page()
+  page.evaluate("XP.set({view:'settings'})")
+  page.select_option("[data-setting=theme] select", "Hell")
+  assert page.evaluate("document.documentElement.dataset.theme") == "light"
+  assert page.locator("[data-setting=theme] select").input_value() == "Hell"
+  page.context.close()
+
+
+@test
+def test_monitor_times_ascending(ctx):
+  page = ctx.page()
+  t = page.evaluate("XP.data.telegrams.map(x => x.time)")
+  assert t == sorted(t) and len(set(t)) == len(t), t
+  page.context.close()
+
+
+@test
+def test_touch_targets_in_tab_strip(ctx):
+  context = ctx.browser.new_context(viewport={"width": 400, "height": 860}, has_touch=True, is_mobile=True)
+  page = context.new_page()
+  page.goto(ctx.url())
+  page.evaluate("XP.openObject('device','1.1.4')")
+  for sel in (".tab .x.pin", ".tab .x:not(.pin)"):
+    b = page.locator(sel).first.bounding_box()
+    assert b["width"] >= 44 and b["height"] >= 44, (sel, b)
+  context.close()
+
+
+@test
+def test_group_address_links_fit_narrow(ctx):
+  page = ctx.page(400, 860)
+  page.evaluate("XP.set({view:'groupAddresses'}); XP.openObject('groupAddress','1/2/3',{pin:true})")
+  r = page.evaluate("""(() => { const w = document.querySelector('.tblwrap'), t = w.querySelector('table');
+    const b = w.getBoundingClientRect(); return [b.left, w.scrollWidth <= w.clientWidth, getComputedStyle(w).paddingLeft]; })()""")
+  assert r[1], "linked-objects table scrolls horizontally"
+  assert r[2] != "0px"
+  page.context.close()
+
+
 def screenshots(ctx, out):
   out.mkdir(parents=True, exist_ok=True)
   count = 0

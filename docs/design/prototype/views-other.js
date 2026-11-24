@@ -176,7 +176,7 @@
   /* kind: select | toggle | text | num | secret */
   var ROWS = [
     { id: "language", group: "general", label: "Sprache", kind: "select", opts: ["Deutsch", "English", "Čeština", "Polski"], value: "Deutsch", kw: "language" },
-    { id: "theme", group: "general", label: "Design", kind: "select", opts: ["Dunkel", "Hell", "System"], value: "Dunkel", kw: "theme dark light" },
+    { id: "theme", group: "general", label: "Design", kind: "select", opts: ["Dunkel", "Hell"], value: "Dunkel", kw: "theme dark light" },
     { id: "density", group: "general", label: "Dichte der Listen", kind: "select", opts: ["Kompakt", "Komfortabel"], value: "Kompakt", hint: "Komfortabel macht Zeilen und Schaltflächen höher." },
     { id: "restore", group: "general", label: "Letztes Projekt beim Start öffnen", kind: "toggle", value: true },
     { id: "updates", group: "general", label: "Beim Start nach Updates suchen", kind: "toggle", value: true },
@@ -200,7 +200,9 @@
   XP.settingsRows = ROWS.map(function (r) {
     return { id: r.id, group: r.group, groupLabel: GROUPS.filter(function (g) { return g.id === r.group; })[0].label, label: r.label };
   });
-  function val(r) { return S.settingValues[r.id] !== undefined ? S.settingValues[r.id] : r.value; }
+  function val(r) {
+    if (r.id === "theme") return S.theme === "light" ? "Hell" : "Dunkel";   /* the same state as the top bar button */
+    return S.settingValues[r.id] !== undefined ? S.settingValues[r.id] : r.value; }
   function matches(r, q) {
     var hay = (r.label + " " + (r.hint || "") + " " + (r.kw || "") + " " + GROUPS.filter(function (g) { return g.id === r.group; })[0].label).toLowerCase();
     return q.toLowerCase().split(/\s+/).filter(Boolean).every(function (t) { return hay.indexOf(t) >= 0; });
@@ -259,6 +261,7 @@
     app.addEventListener("change", function (e) {
       var t = e.target;
       if (!t.matches || !t.matches("[data-set]")) return;
+      if (t.dataset.set === "theme") { XP.actions.theme(); return; }
       S.settingValues[t.dataset.set] = t.type === "checkbox" ? t.checked : t.value;
       if (t.type === "checkbox") { var c = t.parentNode.querySelector(".t-caption"); if (c) c.textContent = t.checked ? "Ein" : "Aus"; }
     });

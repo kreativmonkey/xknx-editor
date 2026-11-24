@@ -92,15 +92,15 @@ Starting values. Verify contrast after every change.
 | `border.subtle` | `#393B40` | `#EBECF0` | dividers, table lines |
 | `border.strong` | `#4E5157` | `#C9CCD6` | input outlines, dialog edges |
 | `text.primary` | `#DFE1E5` | `#1E1F22` | body |
-| `text.secondary` | `#9DA0A8` | `#6C707E` | metadata, hints, captions |
+| `text.secondary` | `#9DA0A8` | `#686C79` | metadata, hints, captions |
 | `text.disabled` | `#6F737A` | `#A8ADBD` | disabled |
-| `accent` | `#3574F0` | `#3574F0` | primary button, focus ring, links, selection marker |
-| `accent.hover` | `#467FF2` | `#2E5FC9` | |
+| `accent` | `#3370E8` | `#3370E8` | primary button, focus ring, links, selection marker |
+| `accent.hover` | `#2B62D3` | `#2E5FC9` | |
 | `accent.text` | `#FFFFFF` | `#FFFFFF` | text on accent |
-| `status.success` | `#5FB865` | `#208A3C` | ok / programmed / connected |
-| `status.warning` | `#E5A63B` | `#B86E00` | needs attention |
-| `status.error` | `#F75464` | `#D1293D` | failed / invalid |
-| `status.info` | `#548AF7` | `#3574F0` | neutral notices |
+| `status.success` | `#5FB865` | `#1F843A` | ok / programmed / connected |
+| `status.warning` | `#E5A63B` | `#A76400` | needs attention |
+| `status.error` | `#F86775` | `#D1293D` | failed / invalid |
+| `status.info` | `#6395F8` | `#3370E8` | neutral notices |
 | `status.*.subtle` | 15 % of the status color on `bg.surface` | 10 % | background of banners/badges |
 
 `theme.status_color(kind)` stays as a thin wrapper over `color("status.<kind>")`
