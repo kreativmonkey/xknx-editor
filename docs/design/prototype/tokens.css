@@ -1,0 +1,73 @@
+/* Design tokens: values copied from .agents/skills/gui-design/design-system.md.
+   The only file allowed to contain color literals. */
+@font-face{font-family:"XKNX Sans";font-weight:400;src:url("fonts/XKNXSans-Regular.ttf") format("truetype")}
+@font-face{font-family:"XKNX Sans";font-weight:300;src:url("fonts/XKNXSans-Semilight.ttf") format("truetype")}
+@font-face{font-family:"XKNX Sans";font-weight:700;src:url("fonts/XKNXSans-Bold.ttf") format("truetype")}
+@font-face{font-family:"Inconsolata";font-weight:400;src:url("fonts/Inconsolata-Medium.ttf") format("truetype")}
+
+:root{
+  --font-sans:"XKNX Sans","Segoe UI",system-ui,sans-serif;
+  --font-mono:"Inconsolata",Consolas,monospace;
+
+  --space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px;--space-8:32px;
+
+  --fs-caption:12px;--fs-body:14px;--fs-label:12px;--fs-title:16px;--fs-heading:20px;--fs-display:28px;--fs-mono:13px;
+  --fw-regular:400;--fw-semilight:300;--fw-bold:700;
+  --ls-label:0.04em;
+
+  --radius-0:0;--radius-control:4px;--radius-popup:6px;--radius-pill:999px;
+
+  --dim:rgba(0,0,0,0.4);
+  --focus-ring:2px;
+  --motion:150ms;
+  --categorical-1:#3574F0;--categorical-2:#E08855;--categorical-3:#2AA79B;--categorical-4:#9A6DD7;
+  --categorical-5:#D4A72C;--categorical-6:#D9578C;--categorical-7:#5FA463;--categorical-8:#8C8F96;
+}
+
+:root[data-theme=dark]{
+  color-scheme:dark;
+  --bg-canvas:#1E1F22;--bg-surface:#2B2D30;--bg-raised:#393B40;--bg-inset:#232427;
+  --bg-hover:#FFFFFF0F;--bg-selected:#2E436E;
+  --border-subtle:#393B40;--border-strong:#4E5157;
+  --text-primary:#DFE1E5;--text-secondary:#9DA0A8;--text-disabled:#6F737A;
+  --accent:#3574F0;--accent-hover:#467FF2;--accent-text:#FFFFFF;
+  --status-success:#5FB865;--status-warning:#E5A63B;--status-error:#F75464;--status-info:#548AF7;
+  --status-success-subtle:color-mix(in srgb,var(--status-success) 15%,var(--bg-surface));
+  --status-warning-subtle:color-mix(in srgb,var(--status-warning) 15%,var(--bg-surface));
+  --status-error-subtle:color-mix(in srgb,var(--status-error) 15%,var(--bg-surface));
+  --status-info-subtle:color-mix(in srgb,var(--status-info) 15%,var(--bg-surface));
+}
+:root[data-theme=light]{
+  color-scheme:light;
+  --bg-canvas:#F7F8FA;--bg-surface:#FFFFFF;--bg-raised:#FFFFFF;--bg-inset:#F2F3F5;
+  --bg-hover:#0000000A;--bg-selected:#D4E2FF;
+  --border-subtle:#EBECF0;--border-strong:#C9CCD6;
+  --text-primary:#1E1F22;--text-secondary:#6C707E;--text-disabled:#A8ADBD;
+  --accent:#3574F0;--accent-hover:#2E5FC9;--accent-text:#FFFFFF;
+  --status-success:#208A3C;--status-warning:#B86E00;--status-error:#D1293D;--status-info:#3574F0;
+  --status-success-subtle:color-mix(in srgb,var(--status-success) 10%,var(--bg-surface));
+  --status-warning-subtle:color-mix(in srgb,var(--status-warning) 10%,var(--bg-surface));
+  --status-error-subtle:color-mix(in srgb,var(--status-error) 10%,var(--bg-surface));
+  --status-info-subtle:color-mix(in srgb,var(--status-info) 10%,var(--bg-surface));
+}
+
+/* Density presets: frame_padding, item_spacing, cell_padding, row height, scrollbar */
+:root,[data-density=compact]{
+  --pad-frame-x:6px;--pad-frame-y:3px;
+  --gap-item-x:8px;--gap-item-y:4px;
+  --gap-inner:4px;
+  --pad-cell-x:6px;--pad-cell-y:2px;
+  --pad-window:8px;
+  --row-h:24px;--control-h:24px;
+  --scrollbar:10px;
+}
+[data-density=comfortable],[data-touch]{
+  --pad-frame-x:10px;--pad-frame-y:6px;
+  --gap-item-x:8px;--gap-item-y:8px;
+  --gap-inner:6px;
+  --pad-cell-x:8px;--pad-cell-y:6px;
+  --pad-window:24px;
+  --row-h:32px;--control-h:32px;
+  --scrollbar:14px;
+}
+[data-touch]{--row-h:44px;--control-h:44px}
