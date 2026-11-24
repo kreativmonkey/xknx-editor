@@ -14,7 +14,7 @@ Theme, workspace, sidebar state, panel widths and saved workspaces survive a rel
 ## What each workspace shows
 
 - **Planen**: device list with preview and pinned tabs, parameter pages with changed-only filter,
-  group objects with multi-select and inspector, group address tree with linked objects, context menus
+  group objects with multi-select (on touch: long press, "Auswählen") and a resizable inspector, group address tree with linked objects, context menus
   (right click or 500 ms long press), rename and link dialogs.
 - **Inbetriebnahme**: devices by status, what changed since the last programming, program scopes,
   queue with progress and a failing device, change address and replace device flows.
@@ -35,8 +35,11 @@ values are simulated. The settings for language and density do not change the UI
 ## Rules the prototype follows
 
 Only flat fills, 1 px lines and the radii and fonts of the design system (fallbacks when the fonts
-are missing); colors and spacing only from `tokens.css`. `tools/contrast.py` prints the contrast
-ratios of the token pairs for both themes (stdlib only).
+are missing). Colors come only from `tokens.css`. Every gap, padding and margin in `app.css` is a
+spacing token (`--space-*`, `--space-0-5` only for hairlines and tracks) or a density preset; only
+0 and 1 px are literal, and the smoke test checks it. `tools/contrast.py` prints the contrast
+ratios of the token pairs for both themes (stdlib only). Nothing is loaded from the network; the
+smoke test blocks and reports every http(s) request.
 
 ## Tests
 

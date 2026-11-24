@@ -31,6 +31,7 @@ so this file stays the specification.
 
 | Token | px | Use |
 |---|---|---|
+| `space(0.5)` | 2 | hairlines and tracks only: segmented-control track padding and gap, gap between tabs; never between content |
 | `space(1)` | 4 | icon ↔ label, dense cell padding (vertical) |
 | `space(2)` | 8 | between related controls, compact item spacing |
 | `space(3)` | 12 | field ↔ field in comfortable forms |
@@ -38,7 +39,8 @@ so this file stays the specification.
 | `space(6)` | 24 | between sections, dialog padding |
 | `space(8)` | 32 | guided surfaces: block separation, Welcome |
 
-No other gaps are allowed. "Related things close, unrelated things far" is
+No other gaps are allowed: every gap, padding and margin is one of these steps or a density
+preset below; only 0 and 1 px stay literal. "Related things close, unrelated things far" is
 done with these steps.
 
 ### Density presets
@@ -66,11 +68,12 @@ The family is XKNX Sans (Regular, Semilight, Bold), with Inconsolata for code/he
 | `title` | 16 | Bold | panel/section titles, dialog titles |
 | `heading` | 20 | Semilight | guided surfaces: page headings |
 | `display` | 28 | Semilight | Welcome only |
-| `mono` | 13 | Inconsolata | hex, raw telegrams, memory |
+| `mono` | 14 | Inconsolata | addresses, hex, raw telegrams, memory (body size, so code adds no size) |
 
 Rules:
 
-- Use at most **three** styles in one view.
+- Use at most **three type sizes** in one view (top bar, sidebar, list and editor together).
+  Weight variants of one size count once (`body` / `body_strong`, `caption` / `label`).
 - Show hierarchy with size/weight first and with `text.secondary` second.
 - Load the fonts at these sizes (do not scale glyphs at run time), so they render crisply in both
   the desktop and the web renderer. This needs `load_fonts` in `widgets/fonts.py` to bake every size.
@@ -91,14 +94,15 @@ Starting values. Verify contrast after every change.
 | `bg.selected` | `#253658` | `#DCE7FF` | selected rows |
 | `border.subtle` | `#393B40` | `#EBECF0` | dividers, table lines |
 | `border.strong` | `#4E5157` | `#C9CCD6` | dialog and popup edges |
-| `border.control` | `#777B83` | `#878B98` | outlines of inputs, selects, checkboxes, toggles, segmented controls (≥ 3:1 on `bg.surface` and `bg.inset`) |
+| `border.control` | `#858990` | `#7A7E8A` | outlines of inputs, selects, checkboxes, toggles, bordered buttons, the workspace switcher and the status pill (≥ 3:1 on `bg.surface`, `bg.raised`, `bg.inset` and `bg.selected`) |
 | `text.primary` | `#DFE1E5` | `#1E1F22` | body |
 | `text.secondary` | `#A5A8B0` | `#64666D` | metadata, hints, captions |
 | `text.disabled` | `#6F737A` | `#A8ADBD` | disabled |
-| `accent` | `#3370E8` | `#3370E8` | fills and lines: primary button, focus ring, active tab line, current step, progress fill, changed dot; selection marker in light only |
+| `accent` | `#3370E8` | `#3370E8` | fills: primary button, current step circle, progress fill; the active tab's top line |
+| `accent.marker` | `#93B3F3` | `#3370E8` | marks on any surface: selection marker, focus ring, toggled-on edges (flag toggles, chosen option, current step line), changed dot, edge of the sending address chip, splitter while dragged; ≥ 3:1 on surface, raised, inset, selected and canvas |
 | `accent.hover` | `#2B62D3` | `#2E5FC9` | |
 | `accent.text` | `#FFFFFF` | `#FFFFFF` | text on accent |
-| `accent.link` | `#93B3F3` | `#2B5EC3` | accent as text or icon (links, selected menu item, selected sidebar icon); selection marker in dark; ≥ 4.5:1 on surface, raised, inset, selected |
+| `accent.link` | `#93B3F3` | `#2B5EC3` | accent as text or icon (links, selected menu item, selected sidebar icon, check marks, the "→" sending cue); ≥ 4.5:1 on surface, raised, inset, selected |
 | `status.success` | `#5FB865` | `#1F843A` | ok / programmed / connected |
 | `status.warning` | `#E5A63B` | `#A76400` | needs attention |
 | `status.error` | `#F86775` | `#D1293D` | failed / invalid |
@@ -114,9 +118,11 @@ Which role when:
 - **Lines:** `border.subtle` separates content (dividers, table lines, panel edges);
   `border.control` outlines a control you operate (inputs, selects, toggles, bordered buttons,
   search); `border.strong` only edges a dialog, popup, menu or sheet.
-- **Accent:** `accent` only as a fill or line; as text or a small icon use `accent.link`
-  (`accent` on `bg.surface` in dark is below 4.5:1). Selection marker ≥ 3:1 on `bg.selected`:
-  `accent.link` in dark.
+- **Accent:** `accent` only as a fill (and the active tab line on the canvas); as text or a
+  small icon use `accent.link` (`accent` on `bg.surface` in dark is below 4.5:1). Every mark
+  that must be seen on whatever lies below it (selection marker, focus ring, toggled-on edge,
+  changed dot) uses `accent.marker`: `accent` reaches only 2.65:1 on `bg.selected` and 2.47:1
+  on `bg.raised` in dark.
 - **Status:** `status.*` for dots, icons and progress; `status.*.text` for words, also on
   `status.*.subtle` backgrounds; `status.*.subtle` only as the background of banners/badges.
 - **Text:** `text.secondary` for metadata and placeholders, `text.disabled` only for disabled
@@ -137,7 +143,7 @@ Timeline, Bus Diagram and DPT enum colors through it.
 - **Elevation:** docked surfaces are separated by `bg.canvas` gaps and
   `border.subtle`, without shadows. Popups and dialogs get `bg.raised` + `border.strong`
   + a modal dim of 40 % black.
-- **Focus:** a 2 px `accent` ring on keyboard focus, always visible.
+- **Focus:** a 2 px `accent.marker` ring on keyboard focus, always visible.
 - **Motion:** only for state changes (expand, toast in/out, progress), at most 150 ms,
   ease-out. No idle animation: the app idles at low FPS, and in `--web`
   every frame costs bandwidth.

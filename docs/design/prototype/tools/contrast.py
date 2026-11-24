@@ -1,7 +1,8 @@
 """WCAG contrast ratios for the token pairs in tokens.css (stdlib only).
 
 Run: python docs/design/prototype/tools/contrast.py   (exit 1 when a pair fails)
-Text needs 4.5:1, accent as UI 3:1. border-control needs 3:1 on surface and inset; border-strong/subtle are decorative.
+Text needs 4.5:1, accent as UI 3:1. accent-marker (selection marker, focus ring, toggled-on edges)
+and border-control need 3:1 on surface, raised, inset and selected; border-strong/subtle are decorative.
 """
 import re
 import sys
@@ -52,9 +53,11 @@ def main():
     pairs += [("accent-text on accent", "accent-text", "accent", 4.5),
               ("accent-text on accent-hover", "accent-text", "accent-hover", 4.5),
               ("accent on surface (UI)", "accent", "bg-surface", 3.0),
-              ("border-control on surface (UI)", "border-control", "bg-surface", 3.0),
-              ("border-control on inset (UI)", "border-control", "bg-inset", 3.0),
               ("border-strong (dialog edge, decor.)", "border-strong", "bg-surface", 0.0)]
+    for bg in surf:
+      pairs.append((f"border-control on {bg} (UI)", "border-control", bg, 3.0))
+    for bg in surf + ("bg-canvas",):
+      pairs.append((f"accent-marker on {bg} (UI)", "accent-marker", bg, 3.0))
     for bg in surf:
       pairs.append((f"accent-link on {bg}", "accent-link", bg, 4.5))
     for s in ("success", "warning", "error", "info"):
