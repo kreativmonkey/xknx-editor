@@ -1,6 +1,6 @@
 # GUI Redesign: Design
 
-Date: 2026-11-24 · Status: draft for approval
+Date: 2026-11-24 · Status: approved 2026-11-24; the prototype in `docs/design/prototype/` supersedes the brainstorm mockups referenced below.
 
 ## Intent
 

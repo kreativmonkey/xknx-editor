@@ -8,7 +8,7 @@
 
 **Tech Stack:** HTML, CSS custom properties, vanilla JS (ES2020); Python Playwright via `uv run --with playwright` (ephemeral, no global install; Chromium from `~/.cache/ms-playwright`).
 
-**Spec:** `docs/superpowers/specs/2026-11-24-gui-redesign-design.md` and `.agents/skills/gui-design/` (design-system.md tokens, components.md patterns). The mockups are in `.superpowers/brainstorm/*/content/` (shell-v2, lists-overview, workspace-commissioning, flows-readdress-replace). They are untracked, so copy what you need.
+**Spec:** `docs/superpowers/specs/2026-11-24-gui-redesign-design.md` and `.agents/skills/gui-design/` (design-system.md tokens, components.md patterns). The mockups are in `.superpowers/brainstorm/*/content/` (shell-v2, lists-overview, workspace-commissioning, flows-readdress-replace). They are untracked, so copy what you need. The finished prototype in `docs/design/prototype/` supersedes these mockups.
 
 ## Global Constraints
 
