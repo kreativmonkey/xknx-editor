@@ -22,6 +22,8 @@ INDEX = (ROOT / "index.html").as_uri()
 TESTS = []
 SCREENSHOT_VIEWS = [
   ("shell", lambda page: None),
+  ("list-preview", lambda page: page.evaluate("XP.openObject('device','1.1.4')")),
+  ("tabs-many", lambda page: page.evaluate("XP.data.devices.slice(0,12).forEach(d => XP.openObject('device', d.address, {pin:true}))")),
 ]
 SIZES = [(1280, 800), (800, 1100), (400, 860)]
 THEMES = ["light", "dark"]
@@ -114,6 +116,268 @@ def test_no_hex_outside_tokens(ctx):
         if pat.search(re.sub(r"url\([^)]*\)", "", line)):
           bad.append(f"{f.name}:{n}: {line.strip()}")
   assert not bad, "hex color literals outside tokens.css:\n" + "\n".join(bad)
+
+
+def open_devices(page, addrs, pin=True):
+  page.evaluate(
+    "([a,p]) => a.forEach(x => XP.openObject('device', x, {pin: p}))", [addrs, pin]
+  )
+
+
+def tab_count(page):
+  return page.locator("[data-testid=tabs] [data-tab]").count()
+
+
+@test
+def test_preview_tab_replaced(ctx):
+  page = ctx.page()
+  page.click("[data-row='1.1.4']")
+  page.click("[data-row='1.1.12']")
+  assert tab_count(page) == 1, tab_count(page)
+  tab = page.locator("[data-testid=tabs] [data-tab]")
+  assert tab.get_attribute("data-tab") == "device:1.1.12"
+  assert page.evaluate("getComputedStyle(document.querySelector('.tab .tl')).fontStyle") == "italic"
+  assert "1.1.12" in page.locator("[data-testid=editor]").inner_text()
+  page.context.close()
+
+
+@test
+def test_double_click_pins(ctx):
+  page = ctx.page()
+  page.dblclick("[data-row='1.1.4']")
+  assert tab_count(page) == 1
+  assert page.evaluate("getComputedStyle(document.querySelector('.tab .tl')).fontStyle") != "italic"
+  page.click("[data-row='1.1.12']")
+  assert tab_count(page) == 2, tab_count(page)
+  # Enter on the focused row pins the preview
+  page.keyboard.press("Enter")
+  assert page.evaluate("XP.state.tabs.filter(t => t.pinned).length") == 2
+  page.keyboard.press("ArrowDown")
+  assert page.evaluate("XP.state.selection.device") == "1.2.1"
+  assert tab_count(page) == 3
+  page.context.close()
+
+
+@test
+def test_close_active_tab_activates_neighbour(ctx):
+  page = ctx.page()
+  open_devices(page, ["1.1.4", "1.1.5", "1.1.6"])
+  page.click("[data-tab='device:1.1.5']")
+  assert page.evaluate("XP.state.activeTab") == "device:1.1.5"
+  page.click("[data-tab='device:1.1.5'] [data-action=closeTab]")
+  assert page.evaluate("XP.state.activeTab") == "device:1.1.6"
+  page.click("[data-tab='device:1.1.6'] [data-action=closeTab]")
+  assert page.evaluate("XP.state.activeTab") == "device:1.1.4"
+  page.click("[data-tab='device:1.1.4'] [data-action=closeTab]")
+  assert page.locator("[data-testid=editor-empty]").is_visible()
+  page.context.close()
+
+
+@test
+def test_many_tabs_active_visible(ctx):
+  page = ctx.page()
+  addrs = page.evaluate("XP.data.devices.slice(0, 12).map(d => d.address)")
+  open_devices(page, addrs)
+  assert tab_count(page) == 12
+  inside = page.evaluate(
+    """() => {
+      const s = document.querySelector('[data-testid=tabs]').getBoundingClientRect();
+      const t = document.querySelector('.tab.on').getBoundingClientRect();
+      return t.left >= s.left - 1 && t.right <= s.right + 1 && t.top >= s.top - 1 && t.bottom <= s.bottom + 1;
+    }"""
+  )
+  assert inside, "active tab outside the strip"
+  assert page.evaluate("document.querySelector('[data-testid=tabs]').scrollWidth > document.querySelector('[data-testid=tabs]').clientWidth")
+  page.click("[data-tab='device:" + addrs[0] + "']")
+  assert page.evaluate(
+    """() => {
+      const s = document.querySelector('[data-testid=tabs]').getBoundingClientRect();
+      const t = document.querySelector('.tab.on').getBoundingClientRect();
+      return t.left >= s.left - 1 && t.right <= s.right + 1;
+    }"""
+  )
+  # the close button is visible without hover
+  assert page.locator(".tab.on [data-action=closeTab]").is_visible()
+  page.context.close()
+
+
+@test
+def test_long_name_narrow_no_hscroll(ctx):
+  page = ctx.page(400, 860)
+  assert page.evaluate("document.body.scrollWidth <= innerWidth")
+  assert page.evaluate("document.querySelector('[data-testid=topbar]').scrollWidth <= document.querySelector('[data-testid=topbar]').clientWidth")
+  row = "[data-row='1.2.9'] .nm"
+  assert page.evaluate(f"getComputedStyle(document.querySelector(\"{row}\")).textOverflow") == "ellipsis"
+  page.click("[data-row='1.2.9']")
+  assert page.evaluate("document.body.scrollWidth <= innerWidth")
+  assert page.evaluate("document.querySelector('[data-testid=tabs]').getBoundingClientRect().right <= innerWidth + 1")
+  page.context.close()
+
+
+@test
+def test_breakpoints(ctx):
+  page = ctx.page(1280, 800)
+  assert page.locator(".rail .item .lbl").first.is_visible()
+  assert page.locator("[data-testid=list]").is_visible()
+  assert page.evaluate("XP.formFactor()") == "wide"
+  page.context.close()
+  page = ctx.page(800, 1100)
+  assert not page.locator(".rail .item .lbl").first.is_visible()
+  assert page.locator("[data-testid=list]").count() == 0
+  assert page.locator("[data-testid=list-button]").inner_text().strip() == "Liste"
+  page.click("[data-testid=list-button]")
+  assert page.locator("[data-testid=drawer]").is_visible()
+  page.click("[data-row='1.1.4']")
+  assert page.locator("[data-testid=drawer]").count() == 0
+  assert page.evaluate("XP.state.activeTab") == "device:1.1.4"
+  page.context.close()
+  page = ctx.page(400, 860)
+  assert page.locator("[data-testid=list]").is_visible()
+  assert not page.locator("[data-testid=editor]").is_visible()
+  page.click("[data-row='1.1.4']")
+  assert page.locator("[data-testid=editor]").is_visible()
+  assert page.locator("[data-testid=back]").is_visible()
+  page.click("[data-testid=back]")
+  assert page.locator("[data-testid=list]").is_visible()
+  assert not page.locator("[data-testid=editor]").is_visible()
+  page.context.close()
+
+
+@test
+def test_form_factor_hysteresis(ctx):
+  page = ctx.page(1000, 800)
+  assert page.evaluate("XP.formFactor()") == "wide"
+  page.set_viewport_size({"width": 980, "height": 800})
+  assert page.evaluate("XP.formFactor()") == "wide"
+  page.set_viewport_size({"width": 950, "height": 800})
+  assert page.evaluate("XP.formFactor()") == "tablet"
+  page.set_viewport_size({"width": 1020, "height": 800})
+  assert page.evaluate("XP.formFactor()") == "tablet"
+  page.set_viewport_size({"width": 1050, "height": 800})
+  assert page.evaluate("XP.formFactor()") == "wide"
+  page.wait_for_function("document.documentElement.dataset.ff === 'wide'")
+  assert page.locator("[data-testid=list]").is_visible()
+  page.context.close()
+
+
+def drag_splitter(page, dx):
+  box = page.locator("[data-testid=splitter-list]").bounding_box()
+  x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+  page.mouse.move(x, y)
+  page.mouse.down()
+  page.mouse.move(x + dx / 2, y, steps=4)
+  page.mouse.move(x + dx, y, steps=4)
+  page.mouse.up()
+
+
+@test
+def test_hide_and_resize_persist(ctx):
+  page = ctx.page()
+  before = page.evaluate("XP.state.widths.list")
+  drag_splitter(page, 80)
+  after = page.evaluate("XP.state.widths.list")
+  assert abs(after - before - 80) <= 2, (before, after)
+  assert abs(page.locator("[data-testid=list]").bounding_box()["width"] - after) <= 2
+  page.click("[data-testid=view-menu-btn]")
+  page.click("[data-testid=toggle-list]")
+  assert page.locator("[data-testid=list]").count() == 0
+  page.reload()
+  assert page.locator("[data-testid=list]").count() == 0
+  assert page.evaluate("XP.state.widths.list") == after
+  assert page.evaluate("XP.state.hidden.list") is True
+  page.click("[data-testid=view-menu-btn]")
+  page.click("[data-testid=toggle-list]")
+  assert abs(page.locator("[data-testid=list]").bounding_box()["width"] - after) <= 2
+  page.context.close()
+
+
+@test
+def test_save_workspace(ctx):
+  page = ctx.page()
+  drag_splitter(page, 60)
+  width = page.evaluate("XP.state.widths.list")
+  page.click("[data-testid=view-menu-btn]")
+  page.click("[data-testid=toggle-list]")
+  page.click("[data-testid=view-menu-btn]")
+  page.click("[data-testid=save-workspace]")
+  page.fill("[data-testid=ws-name]", "Mein Büro")
+  page.click("[data-testid=ws-save]")
+  assert page.locator("[data-testid=dialog]").count() == 0
+  assert "Mein Büro" in page.locator("[data-testid=ws-switcher]").inner_text()
+  # change layout, then restore through the switcher
+  page.evaluate("XP.set({hidden: {list: false, inspector: false}, widths: {list: 240, inspector: 300}})")
+  page.click("[data-testid=ws-switcher]")
+  page.click("[data-testid=ws-menu] >> text=Planen")
+  page.click("[data-testid=ws-switcher]")
+  page.click("[data-testid=ws-menu] >> text=Mein Büro")
+  assert page.evaluate("XP.state.hidden.list") is True
+  assert page.evaluate("XP.state.widths.list") == width
+  assert page.locator("[data-testid=list]").count() == 0
+  page.reload()
+  assert "Mein Büro" in page.locator("[data-testid=ws-switcher]").inner_text()
+  assert page.locator(".rail .item").count() > 0
+  page.context.close()
+
+
+@test
+def test_load_merges_defaults(ctx):
+  script = (
+    "localStorage.setItem('xp-prototype-v1', JSON.stringify("
+    "{widths: null, hidden: {list: true}, customWorkspaces: 5, railExpanded: 'x'}));"
+  )
+  page = ctx.page(init_script=script)
+  assert page.evaluate("XP.state.widths.list") == 280
+  assert page.evaluate("XP.state.widths.inspector") == 300
+  assert page.evaluate("XP.state.hidden.list") is True
+  assert page.evaluate("XP.state.hidden.inspector") is False
+  assert page.evaluate("Array.isArray(XP.state.customWorkspaces)")
+  assert page.locator("[data-testid=rail]").is_visible()
+  page.context.close()
+
+
+@test
+def test_escape_closes_menus(ctx):
+  page = ctx.page()
+  page.click("[data-testid=ws-switcher]")
+  assert page.locator("[data-testid=ws-menu]").is_visible()
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=ws-menu]").count() == 0
+  page.click("[data-testid=view-menu-btn]")
+  assert page.locator("[data-testid=view-menu]").is_visible()
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=view-menu]").count() == 0
+  page.click("[data-testid=view-menu-btn]")
+  page.click("[data-testid=save-workspace]")
+  assert page.locator("[data-testid=dialog]").is_visible()
+  page.keyboard.press("Escape")
+  assert page.locator("[data-testid=dialog]").count() == 0
+  page.context.close()
+
+
+@test
+def test_long_press_dispatches_contextmenu(ctx):
+  page = ctx.page()
+  page.evaluate(
+    "window.__ctx = []; document.addEventListener('contextmenu', e => window.__ctx.push(e.target.closest('[data-row]') && e.target.closest('[data-row]').dataset.row))"
+  )
+  box = page.locator("[data-row='1.1.4']").bounding_box()
+  x, y = box["x"] + 40, box["y"] + box["height"] / 2
+  page.mouse.move(x, y)
+  page.mouse.down()
+  page.wait_for_timeout(300)
+  assert page.evaluate("window.__ctx.length") == 0
+  page.wait_for_timeout(350)
+  page.mouse.up()
+  assert page.evaluate("window.__ctx") == ["1.1.4"], page.evaluate("window.__ctx")
+  assert tab_count(page) == 0, "the release after a long press must not open the row"
+  # moving more than 8 px cancels
+  page.mouse.move(x, y)
+  page.mouse.down()
+  page.mouse.move(x + 12, y + 1)
+  page.wait_for_timeout(650)
+  page.mouse.up()
+  assert page.evaluate("window.__ctx.length") == 1
+  page.context.close()
 
 
 def screenshots(ctx, out):

@@ -23,6 +23,9 @@
     paletteOpen: false,
     connected: false,
     wsMenuOpen: false,
+    viewMenuOpen: false,
+    drawerOpen: false,
+    stackEditor: false,
   };
 
   /* Escaping template helper: XP.h`<b>${x}</b>`; nested h results and arrays are kept. */
@@ -54,14 +57,35 @@
       localStorage.setItem(KEY, JSON.stringify(o));
     } catch (e) { /* storage unavailable */ }
   }
+  /* Merge stored values over the defaults; anything malformed is ignored. */
   XP.load = function () {
     try {
       var raw = localStorage.getItem(KEY);
       if (!raw) return;
-      var o = JSON.parse(raw);
-      PERSIST.forEach(function (k) { if (o && k in o) XP.state[k] = o[k]; });
-      var ws = XP.WORKSPACES[XP.state.workspace];
-      XP.state.view = ws ? ws.defaultView : XP.state.view;
+      var o = JSON.parse(raw), st = XP.state;
+      if (!o || typeof o !== "object") return;
+      if (o.theme === "dark" || o.theme === "light") st.theme = o.theme;
+      if (typeof o.railExpanded === "boolean") st.railExpanded = o.railExpanded;
+      if (o.widths && typeof o.widths === "object") {
+        Object.keys(st.widths).forEach(function (n) {
+          var v = o.widths[n];
+          if (typeof v === "number" && isFinite(v) && v >= 120 && v <= 1000) st.widths[n] = v;
+        });
+      }
+      if (o.hidden && typeof o.hidden === "object") {
+        Object.keys(st.hidden).forEach(function (n) { if (typeof o.hidden[n] === "boolean") st.hidden[n] = o.hidden[n]; });
+      }
+      if (Array.isArray(o.customWorkspaces)) {
+        st.customWorkspaces = o.customWorkspaces.filter(function (c) {
+          return c && typeof c === "object" && typeof c.id === "string" && typeof c.name === "string";
+        });
+      }
+      if (typeof o.workspace === "string") {
+        var w = XP.WORKSPACES[o.workspace];
+        var c = st.customWorkspaces.filter(function (x) { return x.id === o.workspace; })[0];
+        if (w) { st.workspace = o.workspace; st.view = w.defaultView; }
+        else if (c) { st.workspace = c.id; st.view = c.view && XP.VIEWS[c.view] ? c.view : st.view; }
+      }
     } catch (e) { /* ignore broken data */ }
   };
   XP.set = function (patch) {
