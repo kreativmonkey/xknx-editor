@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import pickle
-from collections.abc import Callable
 from concurrent.futures import Future
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import psutil
 import pytest
 
 from xknxeditor.namespaces import detect_version
 from xknxeditor.prod import parse_cache
+from xknxeditor.prod.archive import ArchiveMember
 from xknxeditor.prod.data import to_ir
 
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -99,35 +102,46 @@ def _xmls() -> list[bytes]:
 
 
 def _sources(
-    xmls: list[bytes], reads: list[str] | None = None
-) -> list[parse_cache.XmlSource]:
-    """``xmls`` as sources for ``fill_cache``; ``reads`` hears "read <index>" of each one read."""
-
-    def reader(index: int) -> Callable[[], bytes]:
-        def read() -> bytes:
-            if reads is not None:
-                reads.append(f"read {index}")
-            return xmls[index]
-
-        return read
-
-    return [(len(xml), reader(index)) for index, xml in enumerate(xmls)]
-
-
-def _cached(xml: bytes, cache_dir: Path) -> bytes:
-    return parse_cache._cache_path(xml, detect_version(xml), cache_dir).read_bytes()  # pyright: ignore[reportPrivateUsage]
+    xmls: list[bytes], path: Path, *, nested: bool = False
+) -> list[ArchiveMember]:
+    buffer = io.BytesIO()
+    containers = ("inner.zip",) if nested else ()
+    with ZipFile(buffer if nested else path, "w", ZIP_DEFLATED) as archive:
+        for index, xml in enumerate(xmls):
+            archive.writestr(f"{index}.xml", xml)
+        sources = [
+            ArchiveMember(path, entry.filename, entry.file_size, entry.CRC, containers)
+            for entry in archive.infolist()
+        ]
+    if nested:
+        with ZipFile(path, "w", ZIP_DEFLATED) as archive:
+            archive.writestr("inner.zip", buffer.getvalue())
+    return sources
 
 
+def _expected_path(xml: bytes, cache_dir: Path) -> Path:
+    digest = hashlib.sha256(xml).hexdigest()
+    return (
+        cache_dir / f"ir_{parse_cache.CACHE_VERSION}_{detect_version(xml)}_{digest}.pkl"
+    )
+
+
+@pytest.mark.parametrize("nested", [False, True])
 def test_workers_parse_into_the_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, nested: bool
 ) -> None:
     monkeypatch.setattr(parse_cache, "parse_workers", _one_per_application)
-    parse_cache.fill_cache(_sources(_xmls()), tmp_path / "parallel")
+    xmls = _xmls()
+    sources = _sources(xmls, tmp_path / "products.zip", nested=nested)
+    parallel = tmp_path / "parallel"
+    keys = parse_cache.fill_cache(sources, parallel)
 
-    for xml in _xmls():
-        parsed = parse_cache.cached_to_ir(xml, detect_version(xml), tmp_path / "own")
-        # The worker processes wrote the same parse this process makes.
-        assert pickle.loads(_cached(xml, tmp_path / "parallel")) == parsed
+    for source, xml in zip(sources, xmls, strict=True):
+        version = detect_version(xml)
+        path = _expected_path(xml, parallel)
+        assert keys[source].path(parallel) == path
+        assert keys[source].size == len(xml)
+        assert pickle.loads(path.read_bytes()) == to_ir(xml, version)
 
 
 def test_small_applications_stay_in_this_process(
@@ -137,14 +151,14 @@ def test_small_applications_stay_in_this_process(
         raise AssertionError("worker processes were started")
 
     monkeypatch.setattr(parse_cache, "ProcessPoolExecutor", no_pool)
-    reads: list[str] = []
-    parse_cache.fill_cache(_sources(_xmls(), reads), tmp_path)
-    assert list(tmp_path.iterdir()) == []
-    # Their sizes alone show that no workers pay off: none of them is read.
-    assert reads == []
+    sources = _sources(_xmls(), tmp_path / "products.zip")
+    sources[0].path.unlink()
+    cache = tmp_path / "cache"
+    assert parse_cache.fill_cache(sources, cache) == {}
+    assert not cache.exists()
 
 
-class _RecordingFuture(Future[None]):
+class _RecordingFuture(Future[parse_cache.CacheKey]):
     """A finished parse that tells when it is waited for."""
 
     def __init__(self, events: list[str], index: int) -> None:
@@ -152,103 +166,86 @@ class _RecordingFuture(Future[None]):
         self._events = events
         self._index = index
 
-    def result(self, timeout: float | None = None) -> None:
+    def result(self, timeout: float | None = None) -> parse_cache.CacheKey:
         self._events.append(f"wait {self._index}")
         assert self.done()
-        super().result(timeout)
+        return super().result(timeout)
 
 
 class _RecordingPool:
     """A worker pool that records which XMLs it is handed and when they are waited for."""
 
-    def __init__(self, events: list[str], xmls: list[bytes]) -> None:
+    def __init__(self, events: list[str], sources: list[ArchiveMember]) -> None:
         self._events = events
-        self._xmls = xmls
+        self._sources = sources
         self._futures: list[_RecordingFuture] = []
 
     def __call__(self, **_kwargs: object) -> _RecordingPool:
         return self
 
-    def __enter__(self) -> _RecordingPool:
-        return self
-
-    def __exit__(self, *_args: object) -> None:
+    def shutdown(self) -> None:
         pass
 
-    def submit(self, _fn: object, xml: bytes, _cache_dir: Path) -> Future[None]:
-        index = self._xmls.index(xml)
+    def submit(
+        self, _fn: object, source: ArchiveMember, _cache_dir: Path
+    ) -> Future[parse_cache.CacheKey]:
+        assert isinstance(source, ArchiveMember)
+        assert pickle.loads(pickle.dumps(source)) == source
+        index = self._sources.index(source)
         self._events.append(f"submit {index}")
         future = _RecordingFuture(self._events, index)
         self._futures.append(future)
         # The second worker finishes first. The first one stays busy until the pool feeds the
         # second one another XML.
         if index != 0:
-            future.set_result(None)
+            future.set_result(parse_cache.CacheKey("23", str(index), source.size))
         if index == 2:
-            self._futures[0].set_result(None)
+            self._futures[0].set_result(
+                parse_cache.CacheKey("23", "0", self._sources[0].size)
+            )
         return future
 
 
 def test_only_a_few_xmls_are_handed_over_at_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The XMLs are read one by one, first to see which are cached, then each right before it is
-    handed to a worker. Each worker gets one XML at a time and a cached XML is not handed over."""
+    """Only a member description is submitted, and each worker gets one at a time."""
     base = _xmls()[0]
     # Ten different applications of falling size (the largest are handed over first).
     xmls = [base + b"<!--" + b"x" * (10 - index) + b"-->" for index in range(10)]
-    parse_cache.cached_to_ir(xmls[3], detect_version(xmls[3]), tmp_path)
+    sources = _sources(xmls, tmp_path / "products.zip")
+    sources[0].path.unlink()  # neither the parent nor the fake workers can read XML
     events: list[str] = []
     monkeypatch.setattr(
-        parse_cache, "ProcessPoolExecutor", _RecordingPool(events, xmls)
+        parse_cache, "ProcessPoolExecutor", _RecordingPool(events, sources)
     )
     monkeypatch.setattr(parse_cache, "parse_workers", lambda _sizes: 2)
     progress: list[tuple[int, int]] = []
 
     parse_cache.fill_cache(
-        _sources(xmls, events),
+        sources,
         tmp_path,
         progress=lambda done, total: progress.append((done, total)),
     )
 
-    todo = [0, 1, 2, 4, 5, 6, 7, 8, 9]
-    assert events[:15] == [
-        *(f"read {index}" for index in range(10)),
-        "read 0",
+    assert events[:4] == [
         "submit 0",
-        "read 1",
         "submit 1",
         "wait 1",
+        "submit 2",
     ]
     assert [event for event in events if event.startswith("submit")] == [
-        f"submit {index}" for index in todo
+        f"submit {index}" for index in range(10)
     ]
     pending = 0
-    for event in events[10:]:
+    for event in events:
         if event.startswith("wait"):
             pending -= 1
         elif event.startswith("submit"):
             pending += 1
-        else:
-            assert pending < 2
+        assert 0 <= pending <= 2
     assert pending == 0
-    assert progress == [(done, 10) for done in range(2, 11)]
-
-
-def test_without_workers_the_caller_parses(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    def no_pool(*_args: object, **_kwargs: object) -> None:
-        raise OSError("no processes")
-
-    monkeypatch.setattr(parse_cache, "parse_workers", _one_per_application)
-    monkeypatch.setattr(parse_cache, "ProcessPoolExecutor", no_pool)
-    parse_cache.fill_cache(_sources(_xmls()), tmp_path)
-    assert "parallel application parsing failed" in caplog.text
-
-    for xml in _xmls():
-        knx = parse_cache.cached_to_ir(xml, detect_version(xml), tmp_path)
-        assert knx.manufacturer_data is not None
+    assert progress == [(done, 10) for done in range(1, 11)]
 
 
 @pytest.mark.parametrize("old", ["0", "3"])
@@ -261,10 +258,10 @@ def test_entries_of_other_cache_versions_are_removed(
     monkeypatch.setattr(parse_cache, "_SWEPT", set())
     xml = _xmls()[0]
     version = detect_version(xml)
-    stale = parse_cache._cache_path(xml, version, tmp_path).name.replace(  # pyright: ignore[reportPrivateUsage]
+    stale = _expected_path(xml, tmp_path).name.replace(
         f"ir_{parse_cache.CACHE_VERSION}_", f"ir_{old}_"
     )
-    assert stale != parse_cache._cache_path(xml, version, tmp_path).name  # pyright: ignore[reportPrivateUsage]
+    assert stale != _expected_path(xml, tmp_path).name
     (tmp_path / stale).write_bytes(
         pickle.dumps(to_ir(xml, version)) if old == "3" else b"old conversion"
     )
@@ -276,7 +273,7 @@ def test_entries_of_other_cache_versions_are_removed(
     assert knx.manufacturer_data is not None
     assert not (tmp_path / stale).exists()
     assert other.exists()
-    assert pickle.loads(_cached(xml, tmp_path)) == knx
+    assert pickle.loads(_expected_path(xml, tmp_path).read_bytes()) == knx
 
 
 def test_a_cache_entry_is_the_pickled_parse(
@@ -286,7 +283,7 @@ def test_a_cache_entry_is_the_pickled_parse(
     xml = _xmls()[0]
     version = detect_version(xml)
     knx = parse_cache.cached_to_ir(xml, version, tmp_path)
-    assert pickle.loads(_cached(xml, tmp_path)) == knx
+    assert pickle.loads(_expected_path(xml, tmp_path).read_bytes()) == knx
     assert not list(tmp_path.glob("*.tmp"))
 
     def no_parse(*_args: object) -> None:
@@ -328,7 +325,8 @@ def test_workers_count_the_bytes_they_parse(
     monkeypatch.setattr(parse_cache, "parse_workers", _one_per_application)
     xmls = _xmls()
     heard: list[int] = []
-    parse_cache.fill_cache(_sources(xmls), tmp_path, parsed_bytes=heard.append)
+    sources = _sources(xmls, tmp_path / "products.zip")
+    parse_cache.fill_cache(sources, tmp_path, parsed_bytes=heard.append)
     assert heard[-1] == sum(len(xml) for xml in xmls)
     assert heard == sorted(heard)
 
@@ -339,10 +337,13 @@ def test_a_cached_application_counts_as_parsed(
     monkeypatch.setattr(parse_cache, "parse_workers", _one_per_application)
     xmls = _xmls()
     parse_cache.cached_to_ir(xmls[0], detect_version(xmls[0]), tmp_path)
+    original = _expected_path(xmls[0], tmp_path).stat().st_mtime_ns
     heard: list[int] = []
-    parse_cache.fill_cache(_sources(xmls), tmp_path, parsed_bytes=heard.append)
-    assert heard[0] >= len(xmls[0])
+    sources = _sources(xmls, tmp_path / "products.zip")
+    keys = parse_cache.fill_cache(sources, tmp_path, parsed_bytes=heard.append)
+    assert keys[sources[0]].path(tmp_path).stat().st_mtime_ns == original
     assert heard[-1] == sum(len(xml) for xml in xmls)
+    assert heard == sorted(heard)
 
 
 def test_a_parse_tells_how_far_it_has_got(tmp_path: Path) -> None:

@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import re
 import zipfile
+from contextlib import ExitStack
+from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
 from xml.etree import ElementTree as ET
@@ -14,6 +16,30 @@ if TYPE_CHECKING:
 
 MANUFACTURER_PATTERN = re.compile(r"^M-[0-9A-Fa-f]{4}$")
 APPLICATION_PATTERN = re.compile(r"^M-[0-9A-Fa-f]{4}_A-.+\.xml$")
+
+
+@dataclass(frozen=True, slots=True)
+class ArchiveMember:
+    """A ZIP member a parse worker can reopen from disk, possibly inside other ZIPs."""
+
+    path: Path
+    name: str
+    size: int
+    crc: int
+    containers: tuple[str, ...] = ()
+
+    def read(self) -> bytes:
+        """Read the member from the archive, verifying that it still matches the directory."""
+        with ExitStack() as stack:
+            archive = stack.enter_context(zipfile.ZipFile(self.path))
+            for container in self.containers:
+                archive = stack.enter_context(
+                    zipfile.ZipFile(io.BytesIO(archive.read(container)))
+                )
+            info = archive.getinfo(self.name)
+            if (info.file_size, info.CRC) != (self.size, self.crc):
+                raise ArchiveError(f"Archive member changed: {self.path}: {self.name}")
+            return archive.read(info)
 
 
 class Archive:
@@ -151,11 +177,16 @@ class Archive:
         """The IDs of a manufacturer's application XMLs, sorted, without reading them."""
         return list(self._application_entries(manufacturer_id))
 
-    def application_xml_size(self, manufacturer_id: str, app_id: str) -> int:
-        """The size of an application XML (as listed by :meth:`application_ids`) in bytes,
-        without reading it."""
+    def application_xml_info(
+        self, manufacturer_id: str, app_id: str
+    ) -> zipfile.ZipInfo:
+        """The ZIP directory entry of an application listed by :meth:`application_ids`."""
         entry = self._application_entries(manufacturer_id)[app_id]
-        return self._zipfile.getinfo(entry).file_size
+        return self._zipfile.getinfo(entry)
+
+    def application_xml_size(self, manufacturer_id: str, app_id: str) -> int:
+        """The uncompressed size of an application XML, without reading it."""
+        return self.application_xml_info(manufacturer_id, app_id).file_size
 
     def read_application_xml(self, manufacturer_id: str, app_id: str) -> bytes:
         """The bytes of one application XML listed by :meth:`application_ids`."""

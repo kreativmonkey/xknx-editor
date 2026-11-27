@@ -169,7 +169,7 @@ def test_import_of_several_applications(tmp_path: Path) -> None:
     expected: dict[str, object] = {}
     for xml in _xmls():
         version = detect_version(xml)
-        path = parse_cache._cache_path(xml, version, cache)  # pyright: ignore[reportPrivateUsage]
+        path = parse_cache.CacheKey.for_xml(xml, version).path(cache)
         expected[path.name] = to_ir(xml, version)
     assert entries == expected
 

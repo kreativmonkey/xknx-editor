@@ -6,15 +6,17 @@ from __future__ import annotations
 import gc
 import io
 import re
+import threading
 import zipfile
+from concurrent.futures import Future
 from pathlib import Path
 
 import pytest
 
 from xknxeditor.namespaces.intermediate.knx import Knx
 from xknxeditor.prod import parse_cache
-from xknxeditor.prod.archive import Archive
-from xknxeditor.prod.errors import ArchiveError
+from xknxeditor.prod.archive import Archive, ArchiveMember
+from xknxeditor.prod.errors import ArchiveError, ImportCancelled
 from xknxeditor.prod.loader import load
 from xknxeditor.prod.registry import ApplicationFacts
 
@@ -195,3 +197,92 @@ def test_the_parsed_share_of_a_lone_worker(
     assert shares == sorted(set(shares))
     assert list(registry.applications) == sorted(_xmls())
     assert len(list(tmp_path.glob("ir_*.pkl"))) == len(_xmls())
+
+
+@pytest.mark.parametrize("on_disk", [False, True])
+def test_worker_parses_are_loaded_without_reading_xml_in_the_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, on_disk: bool
+) -> None:
+    content = _product()
+    original = load(content)
+    source = tmp_path / "products.knxprod"
+    source.write_bytes(content)
+    monkeypatch.setattr(parse_cache, "worker_processes", lambda _sizes: 2)
+
+    def no_xml(*_args: object) -> bytes:
+        pytest.fail("the parent tried to read application XML")
+
+    monkeypatch.setattr(Archive, "read_application_xml", no_xml)
+    registry = load(source if on_disk else content, cache_dir=tmp_path / "cache")
+    assert registry.application_facts == original.application_facts
+    for app_id, app in registry.applications.items():
+        assert app.program == original.applications[app_id].program
+
+
+def test_worker_failure_falls_back_to_the_original_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    class FailingPool:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def shutdown(self) -> None:
+            pass
+
+        def submit(self, *_args: object) -> Future[parse_cache.CacheKey]:
+            future: Future[parse_cache.CacheKey] = Future()
+            future.set_exception(OSError("failed to read XML in a worker"))
+            return future
+
+    content = _product()
+    monkeypatch.setattr(parse_cache, "worker_processes", lambda _sizes: 2)
+    monkeypatch.setattr(parse_cache, "ProcessPoolExecutor", FailingPool)
+    registry = load(content, cache_dir=tmp_path)
+
+    assert "parallel application parsing failed" in caplog.text
+    assert registry.application_facts == load(content).application_facts
+    assert len(list(tmp_path.glob("ir_*.pkl"))) == len(_xmls())
+
+
+def test_cancellation_keeps_the_staged_archive_until_the_worker_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cancel = threading.Event()
+    worker_done = threading.Event()
+    cleanup_done = threading.Event()
+    submitted: list[ArchiveMember] = []
+
+    class ObservedThread(threading.Thread):
+        def run(self) -> None:
+            try:
+                super().run()
+            finally:
+                cleanup_done.set()
+
+    class PendingPool:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def submit(
+            self, _fn: object, source: ArchiveMember, _cache_dir: Path
+        ) -> Future[parse_cache.CacheKey]:
+            submitted.append(source)
+            cancel.set()
+            return Future()
+
+        def shutdown(self, *, wait: bool = True, cancel_futures: bool) -> None:
+            assert cancel_futures and wait
+            assert worker_done.wait(timeout=10)
+
+    monkeypatch.setattr(parse_cache, "worker_processes", lambda _sizes: 1)
+    monkeypatch.setattr(parse_cache, "ProcessPoolExecutor", PendingPool)
+    monkeypatch.setattr(parse_cache, "Thread", ObservedThread)
+    try:
+        with pytest.raises(ImportCancelled):
+            load(_product(), cache_dir=tmp_path, cancel=cancel)
+        (member,) = submitted
+        assert member.read()
+    finally:
+        worker_done.set()
+    assert cleanup_done.wait(timeout=10)
+    assert not member.path.parent.exists()

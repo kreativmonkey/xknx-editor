@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     )
     from xknxeditor.namespaces.intermediate.load_procedures_t import LoadProcedures
 
-    from .parse_cache import CacheHit
+    from .parse_cache import CacheHit, CacheKey
     from .parser_v2.dynamic import DynamicTreeBuilder, DynamicUI
 
 
@@ -279,20 +279,21 @@ def parse_application_xml(
 
 
 def cached_applications(
-    source: str,
+    source: str | CacheKey,
     manufacturer_id: str,
     language: str | None = None,
     cache_dir: Path | None = None,
 ) -> list[Application] | None:
-    """What :func:`parse_application_xml` gave for the XML of ``source`` (a stored product file
-    and an application in it, named so that another content has another name), from the parse
-    cache, without reading the XML: opening a large product file and unpacking its XML take
-    longer than the cached parse. None when the cache has no entry for it."""
+    """Read applications from the cache without reading their XML, by source identity or key."""
     from .parse_cache import cached_for_source
 
     if cache_dir is None:
         return None
-    found = cached_for_source(source, cache_dir)
+    found = (
+        cached_for_source(source, cache_dir)
+        if isinstance(source, str)
+        else source.load(cache_dir)
+    )
     if found is None:
         return None
     return _applications(found, manufacturer_id, language)

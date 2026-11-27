@@ -25,10 +25,13 @@ import os
 import pickle
 from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
+from contextlib import nullcontext
+from dataclasses import dataclass
 from enum import Enum
 from functools import partial
 from operator import attrgetter
 from pathlib import Path
+from threading import Thread
 from typing import IO, TYPE_CHECKING, Any, cast
 
 from xknxeditor.namespaces import (
@@ -39,7 +42,7 @@ from xknxeditor.namespaces import (
 from xknxeditor.namespaces.intermediate.knx import Knx
 
 from .data import to_ir
-from .errors import ImportCancelled
+from .errors import ImportCancelled, check_cancelled
 from .gc_pause import gc_paused
 from .resources import available_memory, usable_cpu_count
 
@@ -47,12 +50,10 @@ if TYPE_CHECKING:
     import threading
     from multiprocessing.sharedctypes import Synchronized
 
+    from .archive import ArchiveMember
     from .parser_v2.dynamic import DynamicTreeBuilder
 
 logger = logging.getLogger(__name__)
-
-# An application XML for :func:`fill_cache`: its size in bytes and a function that reads it.
-type XmlSource = tuple[int, Callable[[], bytes]]
 
 # How often a wait for a worker looks whether the import was cancelled, in seconds.
 _CANCEL_POLL = 0.2
@@ -312,9 +313,37 @@ LONE_WORKER_MIN_BYTES = 20_000_000
 _WORKER_MEMORY = 1 << 30
 
 
-def _cache_path(xml_bytes: bytes, version: str, cache_dir: Path) -> Path:
-    digest = hashlib.sha256(xml_bytes).hexdigest()
-    return cache_dir / f"ir_{CACHE_VERSION}_{version}_{digest}.pkl"
+@dataclass(frozen=True, slots=True)
+class CacheKey:
+    """The information needed to read a cached parse without its application XML."""
+
+    version: str
+    digest: str
+    size: int
+
+    @classmethod
+    def for_xml(cls, xml_bytes: bytes, version: str) -> CacheKey:
+        return cls(version, hashlib.sha256(xml_bytes).hexdigest(), len(xml_bytes))
+
+    def path(self, cache_dir: Path) -> Path:
+        return cache_dir / f"ir_{CACHE_VERSION}_{self.version}_{self.digest}.pkl"
+
+    def load(self, cache_dir: Path) -> CacheHit | None:
+        """Read this parse and its trees, if still available and readable."""
+        path = self.path(cache_dir)
+        try:
+            # Read from the file as it goes, so the pickled bytes are never in memory beside
+            # the parse.
+            with path.open("rb") as file:
+                entry = _entry(pickle.load(file))
+        except OSError:
+            return None
+        except Exception as exc:  # corrupt / incompatible pickle: read and parse again
+            logger.debug("parse cache miss (unreadable %s): %s", path.name, exc)
+            return None
+        if entry is None:
+            return None
+        return CacheHit(entry[0], self.version, self.size, entry[1], path)
 
 
 def _source_path(source: str, cache_dir: Path) -> Path:
@@ -328,12 +357,12 @@ def remember_source(
     """Note which cache entry the XML read from ``source`` (a stored product file and an
     application in it, named so that another content has another name) has, and its size: a
     later parse of the same source takes it without reading the XML (see cached_for_source)."""
-    digest = hashlib.sha256(xml_bytes).hexdigest()
+    key = CacheKey.for_xml(xml_bytes, version)
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
         path = _source_path(source, cache_dir)
         partial = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-        partial.write_text(f"{version} {digest} {len(xml_bytes)}", encoding="ascii")
+        partial.write_text(f"{key.version} {key.digest} {key.size}", encoding="ascii")
         partial.replace(path)
     except OSError as exc:  # a cache write failure must never break parsing
         logger.debug("could not note parse cache source %s: %s", source, exc)
@@ -346,17 +375,9 @@ def cached_for_source(source: str, cache_dir: Path) -> CacheHit | None:
         version, digest, size = (
             _source_path(source, cache_dir).read_text(encoding="ascii").split()
         )
-        path = cache_dir / f"ir_{CACHE_VERSION}_{version}_{digest}.pkl"
-        with path.open("rb") as file:
-            entry = _entry(pickle.load(file))
+        return CacheKey(version, digest, int(size)).load(cache_dir)
     except (OSError, ValueError):
         return None
-    except Exception as exc:  # corrupt / incompatible pickle: read and parse again
-        logger.debug("parse cache miss for %s: %s", source, exc)
-        return None
-    if entry is None:
-        return None
-    return CacheHit(entry[0], version, int(size), entry[1], path)
 
 
 def _remove_other_versions(cache_dir: Path) -> None:
@@ -399,38 +420,28 @@ def cached_parse(xml_bytes: bytes, version: str, cache_dir: Path | None) -> Cach
     :func:`~xknxeditor.namespaces.parse_progress` block around it hears how far the parse has
     got, in bytes of the XML (all of them once it is done)."""
     report = current_parse_progress()
-    hit = _cached_parse(xml_bytes, version, cache_dir)
+    if cache_dir is None:
+        hit = CacheHit(
+            _staged_to_ir(xml_bytes, version), version, len(xml_bytes), None, None
+        )
+    else:
+        key = CacheKey.for_xml(xml_bytes, version)
+        hit = key.load(cache_dir) or _parse_and_store(xml_bytes, key, cache_dir)
     if report is not None:
         report(len(xml_bytes))
     return hit
 
 
-def _cached_parse(xml_bytes: bytes, version: str, cache_dir: Path | None) -> CacheHit:
-    if cache_dir is None:
-        return CacheHit(
-            _staged_to_ir(xml_bytes, version), version, len(xml_bytes), None, None
-        )
-    path = _cache_path(xml_bytes, version, cache_dir)
-    if path.exists():
-        try:
-            # Read from the file as it goes, so the pickled bytes are never in memory beside
-            # the parse.
-            with path.open("rb") as file:
-                entry = _entry(pickle.load(file))
-            if entry is not None:
-                return CacheHit(entry[0], version, len(xml_bytes), entry[1], path)
-        except (
-            Exception
-        ) as exc:  # corrupt / incompatible pickle -> reparse and overwrite
-            logger.debug("parse cache miss (unreadable %s): %s", path.name, exc)
-    knx = _staged_to_ir(xml_bytes, version)
+def _parse_and_store(xml_bytes: bytes, key: CacheKey, cache_dir: Path) -> CacheHit:
+    path = key.path(cache_dir)
+    knx = _staged_to_ir(xml_bytes, key.version)
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
         _remove_other_versions(cache_dir)
         _write_entry(path, knx)
     except OSError as exc:  # a cache write failure must never break parsing
         logger.debug("could not write parse cache %s: %s", path.name, exc)
-    return CacheHit(knx, version, len(xml_bytes), None, path)
+    return CacheHit(knx, key.version, key.size, None, path)
 
 
 def parse_workers(sizes: Sequence[int]) -> int:
@@ -472,52 +483,55 @@ def _start_worker(parsed: Synchronized[int] | None) -> None:
     _parsed_bytes[0] = parsed
 
 
-def _parse_into_cache(xml_bytes: bytes, cache_dir: Path) -> None:
-    """Worker process: parse one application XML into the cache, counting its bytes as they are
-    parsed (at the end all of them, also when the parse was cached). The collector is paused, as
-    for a parse in the editor's process: the parse holds no reference cycles, and collecting
-    while its objects are created took about as long as the parse."""
-    with gc_paused():
-        _counted_parse(xml_bytes, cache_dir)
-
-
-def _counted_parse(xml_bytes: bytes, cache_dir: Path) -> None:
+def _parse_into_cache(source: ArchiveMember, cache_dir: Path) -> CacheKey:
+    """Read, hash and parse one application in a worker process."""
+    xml_bytes = source.read()
+    key = CacheKey.for_xml(xml_bytes, detect_version(xml_bytes))
     parsed = _parsed_bytes[0]
-    if parsed is None:
-        cached_to_ir(xml_bytes, detect_version(xml_bytes), cache_dir)
-        return
     counted = 0
 
     def count(position: int) -> None:
         nonlocal counted
+        assert parsed is not None
         with parsed.get_lock():
             parsed.value += position - counted
         counted = position
 
-    with parse_progress(count):
-        cached_to_ir(xml_bytes, detect_version(xml_bytes), cache_dir)
-    count(len(xml_bytes))
+    # The caller reads and validates the entry. Skip loading an existing parse in a worker.
+    if not key.path(cache_dir).exists():
+        with (
+            gc_paused(),
+            parse_progress(count) if parsed is not None else nullcontext(),
+        ):
+            _parse_and_store(xml_bytes, key, cache_dir)
+    if parsed is not None:
+        count(key.size)
+    return key
 
 
-def _report_parsed(
-    report: Callable[[int], None], cached: int, parsed: Synchronized[int]
+def _report_parsed(report: Callable[[int], None], parsed: Synchronized[int]) -> None:
+    """Tell ``report`` how many bytes the workers counted."""
+    report(parsed.value)
+
+
+def _finish_cancelled_pool(
+    pool: ProcessPoolExecutor, cleanup: Callable[[], None]
 ) -> None:
-    """Tell ``report`` the bytes parsed: ``cached`` ones and what the workers counted."""
-    report(cached + parsed.value)
+    """Release staged archives after cancelled workers have exited, including on Windows."""
+    try:
+        pool.shutdown(cancel_futures=True)
+    finally:
+        cleanup()
 
 
 def _wait(
-    running: set[Future[None]],
-    pool: ProcessPoolExecutor,
+    running: dict[Future[CacheKey], ArchiveMember],
     cancel: threading.Event | None,
     tick: Callable[[], None] | None = None,
-) -> Future[None]:
-    """Wait for any parse to finish, calling ``tick`` meanwhile. When cancelled, drop the
-    parses not started yet and raise :class:`~.errors.ImportCancelled`."""
+) -> Future[CacheKey]:
+    """Wait for any parse to finish, calling ``tick`` meanwhile."""
     while True:
-        if cancel is not None and cancel.is_set():
-            pool.shutdown(wait=False, cancel_futures=True)
-            raise ImportCancelled
+        check_cancelled(cancel)
         finished, _ = wait(running, timeout=_CANCEL_POLL, return_when=FIRST_COMPLETED)
         if finished:
             return next(iter(finished))
@@ -526,77 +540,92 @@ def _wait(
 
 
 def fill_cache(
-    xmls: Sequence[XmlSource],
+    xmls: Sequence[ArchiveMember],
     cache_dir: Path,
     *,
     cancel: threading.Event | None = None,
     progress: Callable[[int, int], None] | None = None,
     parsed_bytes: Callable[[int], None] | None = None,
-) -> None:
+    cleanup: Callable[[], None] | None = None,
+) -> dict[ArchiveMember, CacheKey]:
     """Parse the application XMLs not cached yet in worker processes, each into the cache, so the
     caller then reads every parse from the cache.
 
-    ``xmls`` gives each application XML's size and a function that reads it: the XMLs are read
-    one by one when needed, and only those handed to the workers are in memory at the same time.
-    How many workers, if any, :func:`worker_processes` decides; when no workers would be started
-    even if nothing were cached, no XML is read at all. When they cannot run, the caller's own
-    :func:`cached_to_ir` parses what is still missing. Setting ``cancel`` drops the parses not
-    started yet and raises :class:`~.errors.ImportCancelled` (the started ones finish).
+    Workers receive only archive locations and return the keys of the existing or newly
+    written entries. When the pool cannot run, the caller parses what is still missing.
+    Setting ``cancel`` drops pending parses, lets started ones finish, and raises
+    :class:`~.errors.ImportCancelled`. When ``cleanup`` is given, it releases staged archives
+    after the workers are finished, even if the caller has already returned on cancellation.
     ``progress`` hears how many of the applications are parsed (cached ones count as parsed) after
     each one, ``parsed_bytes`` how many bytes of them, while they are parsed."""
-    if not worker_processes([size for size, _read in xmls]):
-        return
-    known: set[Path] = set()
-    missing: dict[Path, XmlSource] = {}
-    for size, read in xmls:
-        xml = read()
-        path = _cache_path(xml, detect_version(xml), cache_dir)
-        known.add(path)
-        if path not in missing and not path.exists():
-            missing[path] = (size, read)
-        del xml
-    # The largest first, so the workers finish close together.
-    todo = sorted(missing.values(), key=lambda source: source[0], reverse=True)
-    workers = worker_processes([size for size, _read in todo])
-    if not workers:
-        return
-    cached = len(known) - len(todo)
-    cached_bytes = sum(size for size, _read in xmls) - sum(size for size, _read in todo)
-    logger.debug("parsing %d applications in %d processes", len(todo), workers)
-    # "spawn" starts every worker the same way on every operating system.
-    context = multiprocessing.get_context("spawn")
-    counter: Synchronized[int] | None = None
-    tick: Callable[[], None] | None = None
-    if parsed_bytes is not None:
-        counter = context.Value("q", 0)
-        tick = partial(_report_parsed, parsed_bytes, cached_bytes, counter)
+    keys: dict[ArchiveMember, CacheKey] = {}
+    pool: ProcessPoolExecutor | None = None
     try:
-        with ProcessPoolExecutor(
+        check_cancelled(cancel)
+        workers = worker_processes([source.size for source in xmls])
+        if not workers:
+            return keys
+        # The largest first, so the workers finish close together.
+        todo = sorted(xmls, key=attrgetter("size"), reverse=True)
+        logger.debug("parsing %d applications in %d processes", len(todo), workers)
+        # "spawn" starts every worker the same way on every operating system.
+        context = multiprocessing.get_context("spawn")
+        counter: Synchronized[int] | None = None
+        tick: Callable[[], None] | None = None
+        if parsed_bytes is not None:
+            counter = context.Value("q", 0)
+            tick = partial(_report_parsed, parsed_bytes, counter)
+        pool = ProcessPoolExecutor(
             max_workers=workers,
             mp_context=context,
             initializer=_start_worker,
             initargs=(counter,),
-        ) as pool:
-            # Keep at most one full XML per worker in flight. Refill as soon as any worker
-            # finishes so a slow parse does not leave other workers waiting for input.
-            running = {
-                pool.submit(_parse_into_cache, read(), cache_dir)
-                for _size, read in todo[:workers]
-            }
-            remaining = iter(todo[workers:])
-            for done in range(1, len(todo) + 1):
-                finished = _wait(running, pool, cancel, tick)
-                finished.result()
-                running.remove(finished)
-                if tick is not None:
-                    tick()
-                if progress is not None:
-                    progress(cached + done, len(known))
-                source = next(remaining, None)
-                if source is not None:
-                    _size, read = source
-                    running.add(pool.submit(_parse_into_cache, read(), cache_dir))
+        )
+        # Keep at most one application per worker in flight. Refill as soon as any worker
+        # finishes so a slow parse does not leave other workers waiting for input.
+        running = {
+            pool.submit(_parse_into_cache, source, cache_dir): source
+            for source in todo[:workers]
+        }
+        remaining = iter(todo[workers:])
+        for done in range(1, len(todo) + 1):
+            finished = _wait(running, cancel, tick)
+            keys[running.pop(finished)] = finished.result()
+            if tick is not None:
+                tick()
+            if progress is not None:
+                progress(done, len(todo))
+            check_cancelled(cancel)
+            source = next(remaining, None)
+            if source is not None:
+                running[pool.submit(_parse_into_cache, source, cache_dir)] = source
     except ImportCancelled:
+        if pool is not None:
+            if cleanup is None:
+                pool.shutdown(wait=False, cancel_futures=True)
+            else:
+                # The user may cancel while a worker is opening the staging file. Keep it
+                # until the executor joins its processes, without holding up the caller.
+                joiner = Thread(
+                    target=_finish_cancelled_pool,
+                    args=(pool, cleanup),
+                    name="cancelled-application-parsers",
+                    daemon=False,
+                )
+                try:
+                    joiner.start()
+                except RuntimeError:
+                    _finish_cancelled_pool(pool, cleanup)
+                cleanup = None
+            pool = None
         raise
     except Exception as exc:  # e.g. processes cannot be started: parse in this process
         logger.warning("parallel application parsing failed: %s", exc)
+    finally:
+        try:
+            if pool is not None:
+                pool.shutdown()
+        finally:
+            if cleanup is not None:
+                cleanup()
+    return keys

@@ -11,6 +11,7 @@ from typing import Any, ClassVar
 import pytest
 
 from xknxeditor.prod import parse_cache
+from xknxeditor.prod.archive import ArchiveMember
 from xknxeditor.prod.errors import ImportCancelled, check_cancelled
 from xknxeditor.prod.loader import load
 from xknxeditor.prod.vd import read_dump, vd_to_knxprod
@@ -90,16 +91,10 @@ class _Pool:
     def __init__(self, **_: Any) -> None:
         pass
 
-    def __enter__(self) -> _Pool:
-        return self
-
-    def __exit__(self, *_: object) -> None:
-        pass
-
-    def submit(self, *_: object) -> Future[None]:
+    def submit(self, *_: object) -> Future[parse_cache.CacheKey]:
         return Future()
 
-    def shutdown(self, *, wait: bool, cancel_futures: bool) -> None:
+    def shutdown(self, *, wait: bool = True, cancel_futures: bool) -> None:
         self.shutdowns.append(cancel_futures and not wait)
 
 
@@ -110,8 +105,12 @@ def test_parallel_parsing_drops_the_rest(
     monkeypatch.setattr(parse_cache, "parse_workers", lambda _sizes: 2)
     monkeypatch.setattr(parse_cache, "_CANCEL_POLL", 0.01)
     cancel = threading.Event()
-    threading.Timer(0.05, cancel.set).start()
-    with pytest.raises(ImportCancelled):
-        xml = b'<KNX xmlns="http://knx.org/xml/project/20"/>'
-        parse_cache.fill_cache([(len(xml), lambda: xml)], tmp_path, cancel=cancel)
+    source = ArchiveMember(tmp_path / "products.zip", "app.xml", 100, 0)
+    timer = threading.Timer(0.05, cancel.set)
+    timer.start()
+    try:
+        with pytest.raises(ImportCancelled):
+            parse_cache.fill_cache([source], tmp_path, cancel=cancel)
+    finally:
+        timer.cancel()
     assert _Pool.shutdowns == [True]

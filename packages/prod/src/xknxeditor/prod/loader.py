@@ -9,27 +9,32 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from contextlib import ExitStack
 from functools import partial
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
 
 from xknxeditor.namespaces import parse_progress
 
-from .application import Application, parse_application_xml
-from .archive import Archive
+from . import parse_cache
+from .application import Application, cached_applications, parse_application_xml
+from .archive import Archive, ArchiveMember
 from .catalog import parse_catalog_xml
 from .errors import check_cancelled
 from .hardware import parse_hardware_xml
 from .master import parse_master_xml
-from .parse_cache import fill_cache
 from .registry import ApplicationFacts, Registry
 
 if TYPE_CHECKING:
     import threading
+    from zipfile import ZipInfo
 
     from xknxeditor.namespaces.intermediate.application_program_t import (
         ApplicationProgram,
     )
+
+    from .parse_cache import CacheKey
 
 logger = logging.getLogger(__name__)
 
@@ -57,19 +62,41 @@ def _shifted(share: _ParsedShare, before: int, position: int) -> None:
     share(before + position)
 
 
+def _read_applications(
+    archive: Archive,
+    manufacturer_id: str,
+    xml_id: str,
+    cache_dir: Path | None,
+) -> list[Application]:
+    return parse_application_xml(
+        archive.read_application_xml(manufacturer_id, xml_id),
+        manufacturer_id,
+        cache_dir=cache_dir,
+    )
+
+
 def _reload_program(
     source: str | bytes | Path,
     require_catalog: bool,
     manufacturer_id: str,
     xml_id: str,
     cache_dir: Path | None,
+    key: CacheKey | None,
     application_id: str,
 ) -> ApplicationProgram:
     """The parsed program ``application_id`` of the application XML ``xml_id`` in ``source``,
     from the parse cache in ``cache_dir`` (parsed again when it is not there)."""
-    with Archive(source, require_catalog=require_catalog) as archive:
-        xml = archive.read_application_xml(manufacturer_id, xml_id)
-    for application in parse_application_xml(xml, manufacturer_id, cache_dir=cache_dir):
+    applications = (
+        cached_applications(key, manufacturer_id, cache_dir=cache_dir)
+        if key is not None
+        else None
+    )
+    if applications is None:
+        with Archive(source, require_catalog=require_catalog) as archive:
+            applications = _read_applications(
+                archive, manufacturer_id, xml_id, cache_dir
+            )
+    for application in applications:
         if application.id == application_id:
             return application.program
     raise LookupError(f"{xml_id} no longer holds the application {application_id}")
@@ -77,16 +104,25 @@ def _reload_program(
 
 def _add_applications(
     registry: Registry,
-    xml: bytes,
+    archive: Archive,
     manufacturer_id: str,
+    xml_id: str,
     cache_dir: Path | None,
+    key: CacheKey | None,
     reload: Callable[[str], ApplicationProgram],
 ) -> None:
     """Add the application programs of one application XML and their facts to ``registry``.
 
     With ``cache_dir`` they are added without their parsed programs: ``reload`` reads one again
     (by its id) when it is used."""
-    for application in parse_application_xml(xml, manufacturer_id, cache_dir=cache_dir):
+    applications = (
+        cached_applications(key, manufacturer_id, cache_dir=cache_dir)
+        if key is not None
+        else None
+    )
+    if applications is None:
+        applications = _read_applications(archive, manufacturer_id, xml_id, cache_dir)
+    for application in applications:
         program = application.program
         registry.application_facts[application.id] = ApplicationFacts(
             application_number=program.application_number,
@@ -103,6 +139,56 @@ def _add_applications(
                 partial(reload, application.id),
             )
         registry.applications[application.id] = application
+
+
+def _warm_cache(
+    source: str | bytes | Path,
+    entries: dict[tuple[str, str], ZipInfo],
+    cache_dir: Path,
+    *,
+    cancel: threading.Event | None,
+    progress: Callable[[int, int], None] | None,
+    parsed_bytes: Callable[[int], None] | None,
+) -> dict[tuple[str, str], CacheKey]:
+    """Let workers read archive members and return their cache keys."""
+
+    def warm(
+        path: Path, staged: ExitStack | None = None
+    ) -> dict[tuple[str, str], CacheKey]:
+        members = {
+            app: ArchiveMember(path, entry.filename, entry.file_size, entry.CRC)
+            for app, entry in entries.items()
+        }
+        keys = parse_cache.fill_cache(
+            list(members.values()),
+            cache_dir,
+            cancel=cancel,
+            progress=progress,
+            parsed_bytes=parsed_bytes,
+            cleanup=staged.pop_all().close if staged is not None else None,
+        )
+        return {app: keys[member] for app, member in members.items() if member in keys}
+
+    if not isinstance(source, bytes):
+        return warm(Path(source).absolute())
+    if not parse_cache.worker_processes(
+        [entry.file_size for entry in entries.values()]
+    ):
+        return {}
+    check_cancelled(cancel)
+    # Catalog imports (including projects and converted product sources) provide ZIP bytes.
+    # Stage the compressed archive once so the pool can reopen it as a file.
+    with ExitStack() as stack:
+        try:
+            folder = stack.enter_context(TemporaryDirectory())
+            path = Path(folder) / "products.zip"
+            path.write_bytes(source)
+        except OSError as exc:
+            logger.warning(
+                "could not stage product archive for parallel parsing: %s", exc
+            )
+            return {}
+        return warm(path, stack)
 
 
 def load(
@@ -136,29 +222,28 @@ def load(
         }
         total = sum(len(ids) for ids in application_ids.values())
         parsed = 0
-        sizes = {
-            (manufacturer_id, app_id): archive.application_xml_size(
+        entries = {
+            (manufacturer_id, app_id): archive.application_xml_info(
                 manufacturer_id, app_id
             )
-            for manufacturer_id, ids in application_ids.items()
+            for manufacturer_id, ids in sorted(application_ids.items())
             for app_id in ids
         }
-        share = _ParsedShare(parsed_share, sum(sizes.values()))
-        if cache_dir is not None:
-            fill_cache(
-                [
-                    (
-                        sizes[manufacturer_id, app_id],
-                        partial(archive.read_application_xml, manufacturer_id, app_id),
-                    )
-                    for manufacturer_id, ids in sorted(application_ids.items())
-                    for app_id in ids
-                ],
+        share = _ParsedShare(
+            parsed_share, sum(entry.file_size for entry in entries.values())
+        )
+        keys = (
+            _warm_cache(
+                source,
+                entries,
                 cache_dir,
                 cancel=cancel,
                 progress=progress,
                 parsed_bytes=share if parsed_share is not None else None,
             )
+            if cache_dir is not None
+            else {}
+        )
         # The bytes of the applications added so far.
         added = 0
 
@@ -182,12 +267,15 @@ def load(
             # before the next one.
             for app_id in application_ids[manufacturer_id]:
                 check_cancelled(cancel)
+                key = keys.get((manufacturer_id, app_id))
                 with parse_progress(partial(_shifted, share, added)):
                     _add_applications(
                         registry,
-                        archive.read_application_xml(manufacturer_id, app_id),
+                        archive,
                         manufacturer_id,
+                        app_id,
                         cache_dir,
+                        key,
                         partial(
                             _reload_program,
                             source,
@@ -195,9 +283,10 @@ def load(
                             manufacturer_id,
                             app_id,
                             cache_dir,
+                            key,
                         ),
                     )
-                added += sizes[manufacturer_id, app_id]
+                added += entries[manufacturer_id, app_id].file_size
                 share(added)
                 parsed += 1
                 if progress is not None:
